@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { LogIn, Eye, EyeOff } from 'lucide-react';
 import { Form, Button, Card, InputGroup } from 'react-bootstrap';
+import logoImage from '../assets/images/logo-1.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -51,7 +52,7 @@ export default function Login() {
       justifyContent: 'center',
       position: 'relative',
       backgroundColor: '#E8F0F8',
-      backgroundImage: 'url(/logo-1.png)',
+      backgroundImage: `url(${logoImage})`,
       backgroundSize: 'clamp(400px, 1100px, 100%) auto',
       backgroundPosition: 'left center',
       backgroundRepeat: 'no-repeat',

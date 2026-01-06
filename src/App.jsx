@@ -22,7 +22,7 @@ import SystemSettings from './pages/SystemSettings';
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/wsscswat">
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route
