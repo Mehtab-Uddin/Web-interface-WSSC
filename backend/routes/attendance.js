@@ -1001,6 +1001,123 @@ router.get('/report', protect, async (req, res) => {
   }
 });
 
+// @route   GET /api/attendance
+// @desc    Get attendance records with optional filters
+// @access  Private
+router.get('/', protect, async (req, res) => {
+  try {
+    const { staffId, dateFrom, dateTo, status, approvalStatus } = req.query;
+    const currentUser = req.user;
+    const currentUserRole = normalizeRole(currentUser.role);
+
+    // Build query
+    const query = {};
+
+    // Filter by staff ID if provided
+    if (staffId && staffId !== 'undefined' && staffId !== 'null' && staffId !== '') {
+      query.staffId = staffId;
+    }
+
+    // Filter by date range if provided
+    if (dateFrom && dateFrom !== 'undefined' && dateFrom !== 'null') {
+      if (dateTo && dateTo !== 'undefined' && dateTo !== 'null') {
+        query.attendanceDate = { $gte: dateFrom, $lte: dateTo };
+      } else {
+        query.attendanceDate = { $gte: dateFrom };
+      }
+    } else if (dateTo && dateTo !== 'undefined' && dateTo !== 'null') {
+      query.attendanceDate = { $lte: dateTo };
+    }
+
+    // Filter by status if provided
+    if (status && status !== 'undefined' && status !== 'null' && status !== '') {
+      // Normalize status values (frontend uses lowercase, database may use title case)
+      const statusMap = {
+        'present': 'Present',
+        'late': 'Late',
+        'absent': 'Absent'
+      };
+      query.status = statusMap[status.toLowerCase()] || status;
+    }
+
+    // Filter by approval status if provided
+    if (approvalStatus && approvalStatus !== 'undefined' && approvalStatus !== 'null' && approvalStatus !== '') {
+      query.approvalStatus = approvalStatus.toLowerCase();
+    }
+
+    // For General Manager: Filter by department
+    let departmentFilter = null;
+    if (currentUserRole === 'general_manager') {
+      const gmDepartments = currentUser.departments && currentUser.departments.length > 0
+        ? currentUser.departments
+        : currentUser.department
+        ? [currentUser.department]
+        : [];
+      
+      if (gmDepartments.length > 0) {
+        departmentFilter = gmDepartments;
+      }
+    }
+
+    // Fetch attendance records
+    const attendances = await Attendance.find(query, {
+      populate: ['staffId', 'supervisorId', 'ncLocationId', 'clockedInBy', 'clockedOutBy'],
+      sort: { attendanceDate: -1, createdAt: -1 }
+    });
+
+    // Apply department filter for General Manager if needed
+    let filteredAttendances = attendances;
+    if (departmentFilter && departmentFilter.length > 0) {
+      filteredAttendances = attendances.filter(att => {
+        const staff = att.staffId_populated || att.staffId;
+        if (!staff || typeof staff === 'string') return false;
+        const staffDept = staff.empDeptt || staff.department;
+        return staffDept && departmentFilter.includes(staffDept);
+      });
+    }
+
+    // Format the response
+    const formatted = filteredAttendances.map(att => {
+      const staff = att.staffId_populated;
+      const supervisor = att.supervisorId_populated;
+      const location = att.ncLocationId_populated;
+
+      return {
+        id: att.id,
+        staff_id: staff ? staff.id : att.staffId,
+        staff_name: staff ? (staff.fullName || staff.username || 'Unknown Staff') : 'Unknown Staff',
+        supervisor_id: supervisor ? supervisor.id : att.supervisorId,
+        supervisor_name: supervisor ? (supervisor.fullName || supervisor.username || 'Unknown Supervisor') : 'Unknown Supervisor',
+        nc_location_id: location ? location.id : att.ncLocationId,
+        location_name: location ? location.name : 'N/A',
+        nc_location_name: location ? location.name : 'N/A',
+        attendance_date: att.attendanceDate,
+        date: att.attendanceDate,
+        clock_in: att.clockIn ? att.clockIn.toISOString() : null,
+        clock_out: att.clockOut ? att.clockOut.toISOString() : null,
+        status: att.status ? att.status.toLowerCase() : 'absent',
+        approval_status: att.approvalStatus || 'pending',
+        overtime: att.overtime || false,
+        double_duty: att.doubleDuty || false,
+        clocked_in_by: att.clockedInBy_populated ? (att.clockedInBy_populated.fullName || att.clockedInBy_populated.username || null) : null,
+        clocked_out_by: att.clockedOutBy_populated ? (att.clockedOutBy_populated.fullName || att.clockedOutBy_populated.username || null) : null,
+        is_override: att.isOverride || false
+      };
+    });
+
+    res.json({
+      success: true,
+      data: formatted
+    });
+  } catch (error) {
+    console.error('Error fetching attendance:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // @route   GET /api/attendance/leadership
 // @desc    Get today's attendance for leadership roles (above staff)
 // @access  Private - CEO and Super Admin only
