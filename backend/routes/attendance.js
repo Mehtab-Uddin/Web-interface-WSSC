@@ -1,0 +1,1156 @@
+const express = require('express');
+const router = express.Router();
+const Attendance = require('../models/Attendance');
+const Location = require('../models/Location');
+const StaffAssignment = require('../models/StaffAssignment');
+const SupervisorLocation = require('../models/SupervisorLocation');
+const SystemConfig = require('../models/SystemConfig');
+const User = require('../models/User');
+const { protect, normalizeRole } = require('../middleware/auth');
+const { isWithinLocationBoundaries } = require('../utils/geofencing');
+
+// Helper: Get system config
+async function getSystemConfig() {
+  const config = await SystemConfig.findOne({ configKey: 'attendance_settings' });
+  return {
+    gracePeriodMinutes: config?.gracePeriodMinutes || 15,
+    minClockIntervalHours: config?.minClockIntervalHours || 6
+  };
+}
+
+// Helper: Parse shift time
+function parseShiftTime(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+  const parts = timeStr.split(':');
+  if (parts.length !== 2) return null;
+  const hour = parseInt(parts[0], 10);
+  const minute = parseInt(parts[1], 10);
+  if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+  return { hour, minute };
+}
+
+// Helper: Get attendance date for night shift users
+// Night shift users who clock in before 6 AM are considered part of previous day's shift
+function getAttendanceDateForNightShift(clockInTime, shiftTime) {
+  const isNightShift = shiftTime === 'night';
+  if (!isNightShift) {
+    // Day shift: use calendar date
+    return clockInTime.toISOString().split('T')[0];
+  }
+  
+  // Night shift: if clocking in before 6 AM, use previous day
+  const hour = clockInTime.getHours();
+  if (hour < 6) {
+    // Before 6 AM - belongs to previous day
+    const previousDay = new Date(clockInTime);
+    previousDay.setDate(previousDay.getDate() - 1);
+    return previousDay.toISOString().split('T')[0];
+  }
+  
+  // 6 AM or later - use current day
+  return clockInTime.toISOString().split('T')[0];
+}
+
+// Helper: Check if office location
+function isOfficeLocation(location) {
+  if (!location) return false;
+  const name = (location.name || '').toLowerCase();
+  const code = (location.code || '').toLowerCase();
+  return name.includes('office') || code.includes('office') || location.isOffice === true;
+}
+
+// Helper: Calculate distance
+function calculateDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// @route   POST /api/attendance/clock-in
+// @desc    Clock in
+// @access  Private
+router.post('/clock-in', protect, async (req, res) => {
+  try {
+    const {
+      staff_id,
+      supervisor_id,
+      zone_id,
+      nc_location_id, // Backward compatibility
+      overtime,
+      double_duty,
+      lat,
+      lng,
+      clock_in_photo_url,
+      is_override,
+      clocked_by_id,
+      attendance_date // Optional: for backdated attendance (YYYY-MM-DD)
+    } = req.body;
+
+    if (!staff_id || !supervisor_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'staff_id and supervisor_id are required'
+      });
+    }
+
+    if (!zone_id && !nc_location_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'zone_id or nc_location_id is required'
+      });
+    }
+
+    const currentUser = req.user;
+    const currentUserRole = normalizeRole(currentUser.role);
+    const isGeneralManager = currentUserRole === 'general_manager';
+    const isManager = currentUserRole === 'manager';
+    const isManagerOrGM = isManager || isGeneralManager;
+
+    // Get zone and location
+    const Zone = require('../models/Zone');
+    let zone = null;
+    let location = null;
+    let finalLocationId = null;
+
+    if (zone_id) {
+      zone = await Zone.findById(zone_id);
+      if (!zone) {
+        return res.status(404).json({
+          success: false,
+          error: 'Zone not found'
+        });
+      }
+      if (zone.locationId) {
+        const Location = require('../models/Location');
+        zone.locationId_populated = await Location.findById(zone.locationId);
+      }
+      location = zone.locationId_populated || zone;
+      finalLocationId = zone.locationId_populated ? zone.locationId_populated.id : zone.locationId;
+    } else if (nc_location_id) {
+      // Backward compatibility
+      location = await Location.findById(nc_location_id);
+      if (!location) {
+        return res.status(404).json({
+          success: false,
+          error: 'Location not found'
+        });
+      }
+      finalLocationId = nc_location_id;
+    }
+
+    // Get supervisor and staff
+    const [supervisor, staff] = await Promise.all([
+      User.findById(supervisor_id),
+      staff_id !== supervisor_id ? User.findById(staff_id) : User.findById(supervisor_id)
+    ]);
+
+    if (!supervisor || !location) {
+      return res.status(404).json({
+        success: false,
+        error: 'Supervisor or location not found'
+      });
+    }
+
+    const isOfficeLoc = isOfficeLocation(location);
+    const isSelfAction = staff_id === currentUser.id.toString();
+
+    // Manager/GM must clock in at office
+    if (isManagerOrGM && isSelfAction && !isOfficeLoc) {
+      return res.status(400).json({
+        success: false,
+        error: 'Managers and General Managers must clock in at office location'
+      });
+    }
+
+    // Verify location coordinates if provided
+    if (lat && lng && isManagerOrGM && isSelfAction) {
+      const isWithin = isWithinLocationBoundaries(lat, lng, location);
+      if (!isWithin) {
+        return res.status(400).json({
+          success: false,
+          error: 'You must be at the office location to clock in'
+        });
+      }
+    }
+
+    // Override mode check
+    const overrideMode = is_override === true && isGeneralManager && !isSelfAction;
+
+    if (!overrideMode) {
+      // Verify supervisor-location assignment
+      const supLoc = await SupervisorLocation.findOne({
+        supervisorId: supervisor_id,
+        ncLocationId: nc_location_id
+      });
+
+      if (!supLoc) {
+        return res.status(400).json({
+          success: false,
+          error: 'Supervisor is not assigned to this location'
+        });
+      }
+
+      // Check staff assignment (if not self-action)
+      if (staff_id !== supervisor_id) {
+        const assignmentQuery = {
+          staffId: staff_id,
+          supervisorId: supervisor_id,
+          isActive: true
+        };
+        
+        if (zone_id) {
+          assignmentQuery.zoneId = zone_id;
+        } else {
+          assignmentQuery.ncLocationId = nc_location_id;
+        }
+
+        const assignment = await StaffAssignment.findOne(assignmentQuery);
+
+        if (!assignment) {
+          return res.status(400).json({
+            success: false,
+            error: zone_id 
+              ? 'Staff is not assigned to this supervisor at this zone'
+              : 'Staff is not assigned to this supervisor at this location'
+          });
+        }
+      }
+    }
+
+    // Check for existing attendance
+    // Allow managers to clock in/out staff for today or yesterday
+    let targetDate = new Date();
+    let todayStr = targetDate.toISOString().split('T')[0];
+    
+    if (attendance_date && isManager && !isSelfAction) {
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(attendance_date)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid date format. Use YYYY-MM-DD'
+        });
+      }
+      
+      // Allow today or yesterday only (not future dates or more than 1 day back)
+      const requestedDate = new Date(attendance_date + 'T00:00:00');
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      
+      // Check if date is in the future
+      if (requestedDate >= tomorrow) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot create attendance for future dates'
+        });
+      }
+      
+      // Check if date is more than 1 day old
+      if (requestedDate < yesterday) {
+        return res.status(400).json({
+          success: false,
+          error: 'Can only mark attendance for today or yesterday'
+        });
+      }
+      
+      todayStr = attendance_date;
+      targetDate = requestedDate;
+    }
+    
+    // For night shift users, determine the correct attendance date
+    const isNightShift = staff.shiftTime === 'night';
+    const now = attendance_date && isManager && !isSelfAction ? targetDate : new Date();
+    const calculatedAttendanceDate = getAttendanceDateForNightShift(now, staff.shiftTime);
+    
+    // Check for existing attendance - for night shift, check both today and yesterday
+    let existingAttendance = null;
+    if (isNightShift) {
+      // Night shift: check both calculated date and previous day (in case they're clocking in early morning)
+      const yesterdayStr = new Date(now);
+      yesterdayStr.setDate(yesterdayStr.getDate() - 1);
+      const yesterdayDateStr = yesterdayStr.toISOString().split('T')[0];
+      
+      existingAttendance = await Attendance.findOne({
+        staffId: staff_id,
+        attendanceDate: { $in: [calculatedAttendanceDate, yesterdayDateStr] },
+        clockOut: null
+      }, { sort: { createdAt: -1 } });
+    } else {
+      existingAttendance = await Attendance.findOne({
+        staffId: staff_id,
+        attendanceDate: calculatedAttendanceDate,
+        clockOut: null
+      }, { sort: { createdAt: -1 } });
+    }
+
+    if (existingAttendance) {
+      return res.json({
+        success: true,
+        data: {
+          id: existingAttendance._id,
+          staff_id: staff_id,
+          supervisor_id: existingAttendance.supervisorId?.toString() || supervisor_id,
+          nc_location_id: existingAttendance.ncLocationId?.toString() || nc_location_id,
+          attendance_date: existingAttendance.attendanceDate,
+          clock_in: existingAttendance.clockIn,
+          status: existingAttendance.status,
+          overtime: existingAttendance.overtime,
+          double_duty: existingAttendance.doubleDuty,
+          clock_in_lat: existingAttendance.clockInLat,
+          clock_in_lng: existingAttendance.clockInLng,
+          clock_in_photo_url: existingAttendance.clockInPhotoUrl,
+          alreadyClockedIn: true
+        }
+      });
+    }
+
+    // Get system config
+    const systemConfig = await getSystemConfig();
+    
+    // Use calculated attendance date (handles night shift properly)
+    const finalAttendanceDate = calculatedAttendanceDate;
+    
+    // Use staff member's personal shift configuration
+    const staffShiftStartTime = staff.shiftStartTime || '09:00';
+    let shiftTime = parseShiftTime(staffShiftStartTime) || { hour: 9, minute: 0 };
+    
+    const clockInMinutes = now.getHours() * 60 + now.getMinutes();
+    const workStartMinutes = shiftTime.hour * 60 + shiftTime.minute;
+    const isLate = clockInMinutes > (workStartMinutes + systemConfig.gracePeriodMinutes);
+
+    // Check if the attendance date is an off day (weekly or company holiday)
+    const Holiday = require('../models/Holiday');
+    const attendanceDateObj = new Date(finalAttendanceDate + 'T00:00:00');
+    const dayOfWeek = attendanceDateObj.getDay(); // 0=Sunday, 6=Saturday
+    
+    // Get staff's shift configuration
+    const staffShiftDays = staff.shiftDays || 6; // Default to 6-day week
+    
+    // Check weekly off days
+    let isWeeklyOff = false;
+    if (staffShiftDays === 6) {
+      // 6-day shift: Only Sunday is off
+      isWeeklyOff = (dayOfWeek === 0);
+    } else if (staffShiftDays === 5) {
+      // 5-day shift: Saturday and Sunday are off
+      isWeeklyOff = (dayOfWeek === 0 || dayOfWeek === 6);
+    }
+    
+    // Check company holidays
+    const companyHoliday = await Holiday.findOne({ date: finalAttendanceDate });
+    const isCompanyHoliday = !!companyHoliday;
+    
+    // Automatic overtime if working on any off day
+    const isOffDay = isWeeklyOff || isCompanyHoliday;
+    const autoOvertime = isOffDay;
+    const finalOvertime = overtime || autoOvertime;
+
+    // Create attendance record
+    // clockedInBy should be set when someone else clocks in on behalf of staff
+    const clockedByOther = !isSelfAction;
+    
+    const attendance = await Attendance.create({
+      staffId: staff_id,
+      supervisorId: supervisor_id,
+      zoneId: zone_id || null,
+      ncLocationId: finalLocationId,
+      attendanceDate: finalAttendanceDate,
+      clockIn: now,
+      overtime: finalOvertime,
+      doubleDuty: double_duty || false,
+      status: isLate ? 'Late' : 'Present',
+      approvalStatus: 'pending',
+      clockInLat: lat || null,
+      clockInLng: lng || null,
+      clockInPhotoUrl: clock_in_photo_url || null,
+      clockedInBy: clockedByOther ? currentUser._id : null,
+      isOverride: overrideMode
+    });
+
+    // Get clocked by name if someone else clocked them in
+    let clockedByName = null;
+    if (clockedByOther && attendance.clockedInBy) {
+      clockedByName = currentUser.fullName || currentUser.username || 'Unknown';
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: attendance.id,
+        staff_id: staff_id,
+        supervisor_id: supervisor_id,
+        nc_location_id: nc_location_id,
+        attendance_date: attendance.attendanceDate,
+        clock_in: attendance.clockIn,
+        status: attendance.status,
+        overtime: attendance.overtime,
+        double_duty: attendance.doubleDuty,
+        clock_in_lat: attendance.clockInLat,
+        clock_in_lng: attendance.clockInLng,
+        clock_in_photo_url: attendance.clockInPhotoUrl,
+        clocked_in_by: clockedByName,
+        is_override: attendance.isOverride,
+        alreadyClockedIn: false
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// @route   POST /api/attendance/clock-out
+// @desc    Clock out
+// @access  Private
+router.post('/clock-out', protect, async (req, res) => {
+  try {
+    const {
+      staff_id,
+      supervisor_id,
+      zone_id,
+      nc_location_id, // Backward compatibility
+      lat,
+      lng,
+      clock_out_photo_url,
+      is_override,
+      attendance_date // Optional: for backdated attendance (YYYY-MM-DD)
+    } = req.body;
+
+    if (!staff_id || !supervisor_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'staff_id and supervisor_id are required'
+      });
+    }
+
+    if (!zone_id && !nc_location_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'zone_id or nc_location_id is required'
+      });
+    }
+
+    const currentUser = req.user;
+    const currentUserRole = normalizeRole(currentUser.role);
+    const isGeneralManager = currentUserRole === 'general_manager';
+    const isManager = currentUserRole === 'manager';
+    const isManagerOrGM = isManager || isGeneralManager;
+
+    // Get zone and location
+    const Zone = require('../models/Zone');
+    let zone = null;
+    let location = null;
+    let finalLocationId = null;
+
+    if (zone_id) {
+      zone = await Zone.findById(zone_id);
+      if (!zone) {
+        return res.status(404).json({
+          success: false,
+          error: 'Zone not found'
+        });
+      }
+      if (zone.locationId) {
+        const Location = require('../models/Location');
+        zone.locationId_populated = await Location.findById(zone.locationId);
+      }
+      location = zone.locationId_populated || zone;
+      finalLocationId = zone.locationId_populated ? zone.locationId_populated.id : zone.locationId;
+    } else if (nc_location_id) {
+      // Backward compatibility
+      location = await Location.findById(nc_location_id);
+      if (!location) {
+        return res.status(404).json({
+          success: false,
+          error: 'Location not found'
+        });
+      }
+      finalLocationId = nc_location_id;
+    }
+
+    const [supervisor, staff] = await Promise.all([
+      User.findById(supervisor_id),
+      User.findById(staff_id)
+    ]);
+
+    if (!supervisor || !location || !staff) {
+      return res.status(404).json({
+        success: false,
+        error: 'Supervisor, location, or staff not found'
+      });
+    }
+
+    const isOfficeLoc = isOfficeLocation(location);
+    const isSelfAction = staff_id === currentUser.id.toString();
+
+    // Manager/GM must clock out at office
+    if (isManagerOrGM && isSelfAction && !isOfficeLoc) {
+      return res.status(400).json({
+        success: false,
+        error: 'Managers and General Managers must clock out at office location'
+      });
+    }
+
+    const overrideMode = is_override === true && isGeneralManager && !isSelfAction;
+
+    if (!overrideMode) {
+      const supLoc = await SupervisorLocation.findOne({
+        supervisorId: supervisor_id,
+        ncLocationId: finalLocationId
+      });
+
+      if (!supLoc) {
+        return res.status(400).json({
+          success: false,
+          error: 'Supervisor is not assigned to this location'
+        });
+      }
+    }
+
+    // Find attendance record - for night shift, check both today and yesterday
+    const now = new Date();
+    const isNightShift = staff.shiftTime === 'night';
+    
+    let todayStr = now.toISOString().split('T')[0];
+    
+    if (attendance_date && isManager && !isSelfAction) {
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(attendance_date)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid date format. Use YYYY-MM-DD'
+        });
+      }
+      todayStr = attendance_date;
+    }
+    
+    // For night shift users clocking out in the morning, check previous day's attendance
+    let attendanceDateToCheck = todayStr;
+    if (isNightShift && !attendance_date) {
+      const hour = now.getHours();
+      // If clocking out before 6 AM, it's part of previous day's shift
+      if (hour < 6) {
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        attendanceDateToCheck = yesterday.toISOString().split('T')[0];
+      }
+    }
+    
+    // Build attendance query - for night shift, check both dates
+    let attendanceQuery = {
+      staffId: staff_id,
+      supervisorId: supervisor_id,
+      clockOut: null // Must be open attendance
+    };
+    
+    if (isNightShift && !attendance_date) {
+      // Night shift: check both today and yesterday
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      attendanceQuery.attendanceDate = { $in: [todayStr, yesterdayStr] };
+    } else {
+      attendanceQuery.attendanceDate = attendanceDateToCheck;
+    }
+    
+    if (zone_id) {
+      attendanceQuery.zoneId = zone_id;
+    } else {
+      attendanceQuery.ncLocationId = finalLocationId;
+    }
+    
+    const attendance = await Attendance.findOne(attendanceQuery, { sort: { createdAt: -1 } });
+
+    if (!attendance) {
+      return res.status(404).json({
+        success: false,
+        error: 'No attendance record found for today'
+      });
+    }
+
+    if (attendance.clockOut) {
+      return res.json({
+        success: true,
+        data: {
+          id: attendance.id,
+          staff_id: staff_id,
+          supervisor_id: supervisor_id,
+          nc_location_id: nc_location_id,
+          attendance_date: attendance.attendanceDate,
+          clock_in: attendance.clockIn,
+          clock_out: attendance.clockOut,
+          clock_out_lat: attendance.clockOutLat,
+          clock_out_lng: attendance.clockOutLng,
+          clock_out_photo_url: attendance.clockOutPhotoUrl,
+          alreadyClockedOut: true
+        }
+      });
+    }
+
+    // Check minimum interval
+    if (!overrideMode && attendance.clockIn) {
+      const systemConfig = await getSystemConfig();
+      const now = new Date();
+      const clockIn = new Date(attendance.clockIn);
+      const timeDiffHours = (now.getTime() - clockIn.getTime()) / (1000 * 60 * 60);
+
+      if (timeDiffHours < systemConfig.minClockIntervalHours) {
+        const remainingMinutes = Math.ceil((systemConfig.minClockIntervalHours - timeDiffHours) * 60);
+        return res.status(400).json({
+          success: false,
+          error: `Cannot clock out yet. Minimum interval is ${systemConfig.minClockIntervalHours} hours. Please wait ${remainingMinutes} more minute(s).`
+        });
+      }
+    }
+
+    // Update clock out
+    // clockedOutBy should be set when someone else clocks out on behalf of staff
+    const clockedOutByOther = !isSelfAction;
+    
+    attendance.clockOut = new Date();
+    attendance.clockOutLat = lat || null;
+    attendance.clockOutLng = lng || null;
+    attendance.clockOutPhotoUrl = clock_out_photo_url || null;
+    attendance.clockedOutBy = clockedOutByOther ? currentUser._id : null;
+    if (!attendance.isOverride && overrideMode) {
+      attendance.isOverride = true;
+    }
+    await attendance.save();
+
+    // Get clocked by name if someone else clocked them out
+    let clockedOutByName = null;
+    if (clockedOutByOther) {
+      clockedOutByName = currentUser.fullName || currentUser.username || 'Unknown';
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: attendance.id,
+        staff_id: staff_id,
+        supervisor_id: supervisor_id,
+        nc_location_id: nc_location_id,
+        clock_out: attendance.clockOut,
+        clock_out_lat: attendance.clockOutLat,
+        clock_out_lng: attendance.clockOutLng,
+        clock_out_photo_url: attendance.clockOutPhotoUrl,
+        clocked_out_by: clockedOutByName,
+        is_override: attendance.isOverride,
+        alreadyClockedOut: false
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/attendance/today
+// @desc    Get today's attendance (includes yesterday for night shift users)
+// @access  Private
+router.get('/today', protect, async (req, res) => {
+  try {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    
+    // For night shift users, include both today and yesterday's attendance
+    // This ensures night shift guards who clocked in yesterday evening are still visible
+    const attendanceQuery = {
+      attendanceDate: { $in: [todayStr, yesterdayStr] }
+    };
+    
+    const attendances = await Attendance.find(attendanceQuery, {
+      populate: ['staffId', 'supervisorId', 'ncLocationId', 'clockedInBy', 'clockedOutBy'],
+      sort: { createdAt: -1 }
+    });
+    
+    // Filter: For day shift users, only show today's attendance
+    // For night shift users, show both today and yesterday (if still clocked in)
+    const now = new Date();
+    const hour = now.getHours();
+    const filteredAttendances = attendances.filter(att => {
+      const staff = att.staffId_populated || att.staffId;
+      const isNightShift = staff && (staff.shiftTime === 'night' || (typeof staff === 'object' && staff.shiftTime === 'night'));
+      
+      if (isNightShift) {
+        // Night shift: show if from yesterday (still active) or from today
+        if (att.attendanceDate === yesterdayStr) {
+          // Yesterday's attendance: only show if still clocked in (no clock out)
+          return !att.clockOut;
+        }
+        // Today's attendance: always show
+        return true;
+      } else {
+        // Day shift: only show today's attendance
+        return att.attendanceDate === todayStr;
+      }
+    });
+
+    const formatted = filteredAttendances.map(att => {
+      const staff = att.staffId_populated;
+      const supervisor = att.supervisorId_populated;
+      const location = att.ncLocationId_populated;
+      return {
+        id: att.id,
+        staffId: staff ? staff.id : att.staffId,
+        staffName: staff ? (staff.fullName || staff.username || 'Unknown Staff') : 'Unknown Staff',
+        staff_name: staff ? (staff.fullName || staff.username || 'Unknown Staff') : 'Unknown Staff',
+        emp_no: staff ? (staff.empNo || null) : null,
+        empNo: staff ? (staff.empNo || null) : null,
+        supervisorId: supervisor ? supervisor.id : att.supervisorId,
+        supervisorName: supervisor ? (supervisor.fullName || supervisor.username || 'Unknown Supervisor') : 'Unknown Supervisor',
+        nc_location_id: location ? location.id : att.ncLocationId,
+        nc: location ? location.name : 'N/A',
+        date: att.attendanceDate,
+        clockIn: att.clockIn,
+        clockOut: att.clockOut,
+        status: att.status ? att.status.toLowerCase().replace(' ', '-') : 'absent',
+        approvalStatus: att.approvalStatus || 'pending',
+        overtime: att.overtime || false,
+        doubleDuty: att.doubleDuty || false,
+        clockedInBy: att.clockedInBy_populated ? (att.clockedInBy_populated.fullName || att.clockedInBy_populated.username || null) : null,
+        clockedOutBy: att.clockedOutBy_populated ? (att.clockedOutBy_populated.fullName || att.clockedOutBy_populated.username || null) : null,
+        isOverride: att.isOverride || false
+      };
+    });
+
+    res.json({
+      success: true,
+      data: formatted
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/attendance/report
+// @desc    Get attendance report
+// @access  Private
+router.get('/report', protect, async (req, res) => {
+  try {
+    const { dateFrom, dateTo, supervisorId, areaId, status = 'all' } = req.query;
+    const currentUser = req.user;
+    const currentUserRole = normalizeRole(currentUser.role);
+    const isCEOOrSuperAdmin = ['ceo', 'super_admin'].includes(currentUserRole);
+    const isGeneralManager = currentUserRole === 'general_manager';
+
+    // Validate required fields (filter out 'undefined' and 'null' strings)
+    const validDateFrom = dateFrom && dateFrom !== 'undefined' && dateFrom !== 'null' ? dateFrom : null;
+    const validDateTo = dateTo && dateTo !== 'undefined' && dateTo !== 'null' ? dateTo : null;
+
+    if (!validDateFrom || !validDateTo) {
+      return res.status(400).json({
+        success: false,
+        error: 'dateFrom and dateTo are required'
+      });
+    }
+
+    const query = {
+      attendanceDate: { $gte: validDateFrom, $lte: validDateTo }
+    };
+
+    // Only add to query if valid value (not undefined, null, or string versions)
+    if (supervisorId && supervisorId !== 'undefined' && supervisorId !== 'null') {
+      query.supervisorId = supervisorId;
+    }
+
+    if (areaId && areaId !== 'undefined' && areaId !== 'null') {
+      query.ncLocationId = areaId;
+    }
+
+    if (status && status !== 'all' && status !== 'undefined' && status !== 'null') {
+      query.status = status;
+    }
+
+    // For General Manager: Filter by department
+    let departmentFilter = null;
+    if (isGeneralManager && !isCEOOrSuperAdmin) {
+      // Get General Manager's departments (prefer departments array, fallback to department)
+      const gmDepartments = currentUser.departments && currentUser.departments.length > 0
+        ? currentUser.departments
+        : currentUser.department
+        ? [currentUser.department]
+        : [];
+      
+      if (gmDepartments.length > 0) {
+        departmentFilter = gmDepartments;
+      } else {
+        // GM with no departments assigned - return empty results for security
+        return res.json({
+          success: true,
+          data: []
+        });
+      }
+    }
+
+    // Build user query - get all active users
+    const userQuery = { isActive: true };
+    
+    // Apply department filter for General Manager
+    if (departmentFilter && departmentFilter.length > 0) {
+      userQuery.$or = [
+        { empDeptt: { $in: departmentFilter } },
+        { department: { $in: departmentFilter } }
+      ];
+    }
+
+    // Fetch all active users (filtered by department if GM)
+    // Handle $or query for MySQL
+    let allActiveUsers;
+    if (userQuery.$or) {
+      // For $or queries, we need to handle them differently
+      const deptFilter = departmentFilter || [];
+      if (deptFilter.length > 0) {
+        allActiveUsers = await User.find({
+          isActive: true,
+          $or: [
+            { empDeptt: deptFilter },
+            { department: deptFilter }
+          ]
+        }, {
+          select: 'fullName username email empNo empDeptt role department shiftDays',
+          sort: { fullName: 1 }
+        });
+      } else {
+        allActiveUsers = await User.find({ isActive: true }, {
+          select: 'fullName username email empNo empDeptt role department shiftDays',
+          sort: { fullName: 1 }
+        });
+      }
+    } else {
+      allActiveUsers = await User.find(userQuery, {
+        select: 'fullName username email empNo empDeptt role department shiftDays',
+        sort: { fullName: 1 }
+      });
+    }
+
+    // Fetch attendance records for the date range
+    const attendances = await Attendance.find(query, {
+      populate: ['staffId', 'supervisorId', 'ncLocationId'],
+      sort: { attendanceDate: -1, createdAt: -1 }
+    });
+
+    // Create a map of attendance records by staff_id and date
+    const attendanceMap = new Map();
+    attendances.forEach(att => {
+      if (att.staffId || att.staffId_populated) {
+        const staffId = att.staffId_populated ? att.staffId_populated.id : att.staffId;
+        const dateKey = att.attendanceDate;
+        const key = `${staffId}_${dateKey}`;
+        attendanceMap.set(key, att);
+      }
+    });
+
+    // Generate all dates in the range
+    const dates = [];
+    const startDate = new Date(validDateFrom);
+    const endDate = new Date(validDateTo);
+    const currentDate = new Date(startDate);
+    
+    while (currentDate <= endDate) {
+      dates.push(new Date(currentDate).toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Fetch all company holidays for the date range
+    const Holiday = require('../models/Holiday');
+    const holidays = await Holiday.find({
+      date: { $gte: validDateFrom, $lte: validDateTo }
+    });
+    
+    // Create a Set of holiday dates for quick lookup
+    const holidayDates = new Set(holidays.map(h => h.date));
+
+    // Create report entries for all active users
+    const formatted = [];
+    
+    // Helper to detect weekly off-day based on shiftDays (5-day: Sat+Sun, 6-day: Sun only)
+    const isOffDay = (shiftDays, dateStr) => {
+      const day = new Date(dateStr).getDay(); // 0 = Sun, 6 = Sat
+      if (shiftDays === 5) {
+        return day === 0 || day === 6;
+      }
+      return day === 0;
+    };
+    
+    // Helper to check if a date is a company holiday
+    const isCompanyHoliday = (dateStr) => {
+      return holidayDates.has(dateStr);
+    };
+
+    allActiveUsers.forEach(user => {
+      const userId = user.id.toString();
+      const userShiftDays = user.shiftDays || 6;
+      
+      // For each date in the range, create an entry
+      dates.forEach(dateStr => {
+        const key = `${userId}_${dateStr}`;
+        const attendance = attendanceMap.get(key);
+        const weeklyOff = isOffDay(userShiftDays, dateStr);
+        
+        if (attendance) {
+          // User has attendance record for this date
+          const normalizedStatus = attendance.status || 'Absent';
+          const isHoliday = weeklyOff || isCompanyHoliday(dateStr);
+          
+          // If it's a holiday, mark as Holiday unless they worked overtime
+          let finalStatus = normalizedStatus;
+          if (isHoliday) {
+            if (attendance.overtime && normalizedStatus.toLowerCase() === 'present') {
+              // Working on holiday = overtime, keep as Present (they worked)
+              finalStatus = 'Present';
+            } else {
+              // Holiday with no overtime or absent on holiday = Holiday
+              finalStatus = 'Holiday';
+            }
+          }
+
+          formatted.push({
+            id: attendance.id,
+            staff_id: userId,
+            staff_name: user.fullName || user.username || 'Unknown',
+            empNo: user.empNo || null,
+            emp_no: user.empNo || null,
+            empDeptt: user.empDeptt || null,
+            emp_deptt: user.empDeptt || null,
+            role: user.role || null,
+            shiftDays: userShiftDays,
+            shift_days: userShiftDays,
+            supervisor_id: attendance.supervisorId_populated ? attendance.supervisorId_populated.id : attendance.supervisorId,
+            supervisor_name: attendance.supervisorId_populated ? (attendance.supervisorId_populated.fullName || attendance.supervisorId_populated.username || 'Unknown') : 'Unknown',
+            nc_location_id: attendance.ncLocationId_populated ? attendance.ncLocationId_populated.id : attendance.ncLocationId,
+            location_name: attendance.ncLocationId_populated ? attendance.ncLocationId_populated.name : 'N/A',
+            area_name: attendance.ncLocationId?.name || 'N/A',
+            attendance_date: dateStr,
+            date: dateStr,
+            clock_in: attendance.clockIn || null,
+            clock_out: attendance.clockOut || null,
+            status: finalStatus,
+            approval_status: attendance.approvalStatus || 'pending',
+            overtime: attendance.overtime || false,
+            double_duty: attendance.doubleDuty || false
+          });
+        } else {
+          // User has no attendance record for this date
+          // Check if it's a weekly off day or company holiday
+          const isHoliday = weeklyOff || isCompanyHoliday(dateStr);
+          const finalStatus = isHoliday ? 'Holiday' : 'Absent';
+
+          formatted.push({
+            id: null,
+            staff_id: userId,
+            staff_name: user.fullName || user.username || 'Unknown',
+            empNo: user.empNo || null,
+            emp_no: user.empNo || null,
+            empDeptt: user.empDeptt || null,
+            emp_deptt: user.empDeptt || null,
+            role: user.role || null,
+            shiftDays: userShiftDays,
+            shift_days: userShiftDays,
+            supervisor_id: null,
+            supervisor_name: 'N/A',
+            nc_location_id: null,
+            location_name: 'N/A',
+            area_name: 'N/A',
+            attendance_date: dateStr,
+            date: dateStr,
+            clock_in: null,
+            clock_out: null,
+            status: finalStatus,
+            approval_status: 'pending',
+            overtime: false,
+            double_duty: false
+          });
+        }
+      });
+    });
+
+    res.json({
+      success: true,
+      data: formatted
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// @route   GET /api/attendance/leadership
+// @desc    Get today's attendance for leadership roles (above staff)
+// @access  Private - CEO and Super Admin only
+router.get('/leadership', protect, async (req, res) => {
+  try {
+    const user = req.user;
+    const userRole = normalizeRole(user.role);
+
+    // Only CEO and Super Admin can access leadership attendance
+    if (!['ceo', 'super_admin'].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. CEO or Super Admin access required.'
+      });
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Fetch all users with leadership roles (all roles above staff)
+    const leadershipRoles = ['supervisor', 'sub_engineer', 'manager', 'general_manager'];
+    const leadershipUsers = await User.find({
+      role: { $in: leadershipRoles },
+      isActive: true
+    }, {
+      select: 'fullName username email role department'
+    });
+
+    // Fetch today's attendance for leadership users
+    const leadershipUserIds = leadershipUsers.map(u => u.id);
+    
+    // If no leadership users, return empty array
+    if (leadershipUserIds.length === 0) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+    
+    const attendances = await Attendance.find({
+      attendanceDate: todayStr,
+      staffId: { $in: leadershipUserIds }
+    }, {
+      populate: ['ncLocationId', 'clockedInBy', 'clockedOutBy'],
+      sort: { createdAt: -1 }
+    });
+
+    // Create a map of attendance by staff ID
+    const attendanceMap = new Map();
+    attendances.forEach(att => {
+      const staffId = att.staffId?.toString();
+      if (staffId && !attendanceMap.has(staffId)) {
+        attendanceMap.set(staffId, att);
+      }
+    });
+
+    // Build the result array with all leadership users and their attendance status
+    const result = leadershipUsers.map(user => {
+      const userId = user.id.toString();
+      const attendance = attendanceMap.get(userId);
+
+      const fullName = user.fullName || user.username || 'Unknown';
+      const role = user.role || 'unknown';
+      const department = user.department || null;
+
+      let clockIn = null;
+      let clockOut = null;
+      let status = 'absent';
+      let nc_location_id = null;
+      let nc_location_name = 'N/A';
+      let clockedInBy = null;
+      let clockedOutBy = null;
+      let isOverride = false;
+
+      if (attendance) {
+        clockIn = attendance.clockIn ? attendance.clockIn.toISOString() : null;
+        clockOut = attendance.clockOut ? attendance.clockOut.toISOString() : null;
+        status = attendance.status ? attendance.status.toLowerCase().replace(' ', '-') : 'absent';
+        
+        if (attendance.ncLocationId) {
+          nc_location_id = attendance.ncLocationId._id?.toString();
+          nc_location_name = attendance.ncLocationId.name || 'N/A';
+        }
+
+        // Get clockedBy information
+        if (attendance.clockedInBy) {
+          const clockedInById = attendance.clockedInBy._id?.toString();
+          if (clockedInById && clockedInById !== userId) {
+            clockedInBy = attendance.clockedInBy.fullName || attendance.clockedInBy.username || null;
+          }
+        }
+
+        if (attendance.clockedOutBy) {
+          const clockedOutById = attendance.clockedOutBy._id?.toString();
+          if (clockedOutById && clockedOutById !== userId) {
+            clockedOutBy = attendance.clockedOutBy.fullName || attendance.clockedOutBy.username || null;
+          }
+        }
+
+        isOverride = attendance.isOverride || false;
+      }
+
+      // Determine status if attendance record exists
+      if (attendance) {
+        if (clockIn && !clockOut) {
+          status = 'present';
+        } else if (clockIn && clockOut) {
+          status = 'present';
+        }
+      }
+
+      return {
+        id: attendance ? attendance.id.toString() : `${userId}-${todayStr}`,
+        userId,
+        name: fullName,
+        role,
+        department,
+        clockIn,
+        clockOut,
+        status,
+        nc_location_id,
+        nc_location_name,
+        clockedInBy,
+        clockedOutBy,
+        isOverride,
+      };
+    });
+
+    // Sort by role (General Manager, Manager, Sub Engineer/Supervisor) then by name
+    const roleOrder = { general_manager: 1, manager: 2, sub_engineer: 3, supervisor: 3 };
+    result.sort((a, b) => {
+      const roleDiff = (roleOrder[a.role] || 99) - (roleOrder[b.role] || 99);
+      if (roleDiff !== 0) return roleDiff;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error fetching leadership attendance:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+module.exports = router;
+
