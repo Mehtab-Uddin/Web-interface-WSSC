@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Card, Table, Button, Spinner, Modal, Form, InputGroup, Row, Col } from 'react-bootstrap';
 import { Plus, Edit, Trash2, Search } from 'lucide-react';
 import TablePagination from '../components/common/TablePagination';
+import ConfirmationModal from '../components/common/ConfirmationModal';
 import { useAuth } from '../contexts/AuthContext';
 import { hasFullControl } from '../utils/roles';
 
@@ -16,6 +17,8 @@ export default function Departments() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
   const [formData, setFormData] = useState({
     deptId: '',
     label: '',
@@ -60,15 +63,24 @@ export default function Departments() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this department?')) return;
+  const handleDeleteClick = (id) => {
+    setDeleteId(id);
+    setShowConfirmModal(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
 
     try {
-      await api.delete(`/departments/${id}`);
+      await api.delete(`/departments/${deleteId}`);
       toast.success('Department deleted successfully');
+      setShowConfirmModal(false);
+      setDeleteId(null);
       fetchDepartments();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to delete department');
+      setShowConfirmModal(false);
+      setDeleteId(null);
     }
   };
 
@@ -193,7 +205,7 @@ export default function Departments() {
                           <Button
                             variant="outline-danger"
                             size="sm"
-                            onClick={() => handleDelete(dept.id)}
+                            onClick={() => handleDeleteClick(dept.id)}
                           >
                             <Trash2 size={16} />
                           </Button>
@@ -276,6 +288,16 @@ export default function Departments() {
           </Form>
         </Modal>
       )}
+
+      <ConfirmationModal
+        show={showConfirmModal}
+        onHide={() => {
+          setShowConfirmModal(false);
+          setDeleteId(null);
+        }}
+        onConfirm={handleDelete}
+        message="Are you sure you want to delete this department?"
+      />
     </div>
   );
 }

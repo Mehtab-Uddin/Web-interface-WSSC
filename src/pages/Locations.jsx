@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Card, Table, Badge, Button, Spinner, Modal, Form, Row, Col, InputGroup, Nav, Tab } from 'react-bootstrap';
 import { Plus, Edit, Trash2, Search } from 'lucide-react';
 import TablePagination from '../components/common/TablePagination';
+import ConfirmationModal from '../components/common/ConfirmationModal';
 import LocationsMap from '../components/tracking/LocationsMap';
 import { useAuth } from '../contexts/AuthContext';
 import { hasFullControl, hasExecutivePrivileges } from '../utils/roles';
@@ -17,6 +18,8 @@ export default function Locations() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -75,15 +78,24 @@ export default function Locations() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this location?')) return;
+  const handleDeleteClick = (id) => {
+    setDeleteId(id);
+    setShowConfirmModal(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
 
     try {
-      await api.delete(`/locations/${id}`);
+      await api.delete(`/locations/${deleteId}`);
       toast.success('Location deleted successfully');
+      setShowConfirmModal(false);
+      setDeleteId(null);
       fetchLocations();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to delete location');
+      setShowConfirmModal(false);
+      setDeleteId(null);
     }
   };
 
@@ -245,7 +257,7 @@ export default function Locations() {
                             <Button
                               variant="outline-danger"
                               size="sm"
-                              onClick={() => handleDelete(location.id)}
+                              onClick={() => handleDeleteClick(location.id)}
                             >
                               <Trash2 size={16} />
                             </Button>
@@ -374,6 +386,16 @@ export default function Locations() {
           </Form>
         </Modal>
       )}
+
+      <ConfirmationModal
+        show={showConfirmModal}
+        onHide={() => {
+          setShowConfirmModal(false);
+          setDeleteId(null);
+        }}
+        onConfirm={handleDelete}
+        message="Are you sure you want to delete this location?"
+      />
     </div>
   );
 }

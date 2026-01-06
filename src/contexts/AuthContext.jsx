@@ -26,7 +26,9 @@ export const AuthProvider = ({ children }) => {
       return response;
     } else {
       authService.logout();
-      throw new Error('Access denied');
+      const accessError = new Error('Access denied');
+      accessError.isAccessDenied = true;
+      throw accessError;
     }
   };
 

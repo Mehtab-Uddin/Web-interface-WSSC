@@ -50,7 +50,34 @@ function App() {
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        <Toaster position="bottom-right" />
+        <Toaster 
+          position="bottom-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#fff',
+              color: '#333',
+              fontSize: '16px',
+              padding: '16px 20px',
+              minWidth: '300px',
+              borderRadius: '8px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              fontFamily: 'Google Sans, sans-serif',
+            },
+            success: {
+              iconTheme: {
+                primary: '#198754',
+                secondary: '#fff',
+              },
+            },
+            error: {
+              iconTheme: {
+                primary: '#dc3545',
+                secondary: '#fff',
+              },
+            },
+          }}
+        />
       </BrowserRouter>
     </AuthProvider>
   );

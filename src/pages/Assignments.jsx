@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Card, Table, Badge, Button, Spinner, Tabs, Tab, InputGroup, Form, Row, Col } from 'react-bootstrap';
 import { Plus, Search } from 'lucide-react';
 import TablePagination from '../components/common/TablePagination';
+import ConfirmationModal from '../components/common/ConfirmationModal';
 import { useAuth } from '../contexts/AuthContext';
 import { hasFullControl, hasExecutivePrivileges } from '../utils/roles';
 import { formatStaffName } from '../utils/format.jsx';
@@ -17,6 +18,9 @@ export default function Assignments() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [deactivateId, setDeactivateId] = useState(null);
+  const [deactivateType, setDeactivateType] = useState(null);
 
   const role = user?.role?.toLowerCase() || '';
   const canManage = hasFullControl(role) || hasExecutivePrivileges(role);
@@ -42,17 +46,29 @@ export default function Assignments() {
     }
   };
 
-  const handleDeactivate = async (id, type) => {
-    if (!window.confirm('Are you sure you want to deactivate this assignment?')) return;
+  const handleDeactivateClick = (id, type) => {
+    setDeactivateId(id);
+    setDeactivateType(type);
+    setShowConfirmModal(true);
+  };
+
+  const handleDeactivate = async () => {
+    if (!deactivateId || !deactivateType) return;
 
     try {
-      if (type === 'staff') {
-        await api.put(`/assignments/${id}/deactivate`);
+      if (deactivateType === 'staff') {
+        await api.put(`/assignments/${deactivateId}/deactivate`);
       }
       toast.success('Assignment deactivated');
+      setShowConfirmModal(false);
+      setDeactivateId(null);
+      setDeactivateType(null);
       fetchAssignments();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to deactivate assignment');
+      setShowConfirmModal(false);
+      setDeactivateId(null);
+      setDeactivateType(null);
     }
   };
 
@@ -163,7 +179,7 @@ export default function Assignments() {
                               <Button
                                 variant="outline-danger"
                                 size="sm"
-                                onClick={() => handleDeactivate(assignment.id, 'staff')}
+                                onClick={() => handleDeactivateClick(assignment.id, 'staff')}
                               >
                                 Deactivate
                               </Button>
@@ -234,6 +250,17 @@ export default function Assignments() {
           </Tab>
         </Tabs>
       </Card>
+
+      <ConfirmationModal
+        show={showConfirmModal}
+        onHide={() => {
+          setShowConfirmModal(false);
+          setDeactivateId(null);
+          setDeactivateType(null);
+        }}
+        onConfirm={handleDeactivate}
+        message="Are you sure you want to deactivate this assignment?"
+      />
     </div>
   );
 }

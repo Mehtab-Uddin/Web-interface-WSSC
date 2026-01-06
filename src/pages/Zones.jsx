@@ -5,6 +5,7 @@ import { Card, Table, Button, Spinner, Modal, Form, Row, Col, InputGroup, Nav, T
 import { Plus, Edit, Trash2, Search } from 'lucide-react';
 import SearchableSelect from '../components/common/SearchableSelect';
 import TablePagination from '../components/common/TablePagination';
+import ConfirmationModal from '../components/common/ConfirmationModal';
 import ZonesMap from '../components/tracking/ZonesMap';
 import { useAuth } from '../contexts/AuthContext';
 import { hasFullControl, hasExecutivePrivileges } from '../utils/roles';
@@ -19,6 +20,8 @@ export default function Zones() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     locationId: '',
@@ -83,15 +86,24 @@ export default function Zones() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this beat?')) return;
+  const handleDeleteClick = (id) => {
+    setDeleteId(id);
+    setShowConfirmModal(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
 
     try {
-      await api.delete(`/zones/${id}`);
+      await api.delete(`/zones/${deleteId}`);
       toast.success('Beat deleted successfully');
+      setShowConfirmModal(false);
+      setDeleteId(null);
       fetchZones();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to delete beat');
+      setShowConfirmModal(false);
+      setDeleteId(null);
     }
   };
 
@@ -245,7 +257,7 @@ export default function Zones() {
                             <Button
                               variant="outline-danger"
                               size="sm"
-                              onClick={() => handleDelete(zone.id)}
+                              onClick={() => handleDeleteClick(zone.id)}
                             >
                               <Trash2 size={16} />
                             </Button>
@@ -379,6 +391,16 @@ export default function Zones() {
           </Form>
         </Modal>
       )}
+
+      <ConfirmationModal
+        show={showConfirmModal}
+        onHide={() => {
+          setShowConfirmModal(false);
+          setDeleteId(null);
+        }}
+        onConfirm={handleDelete}
+        message="Are you sure you want to delete this beat?"
+      />
     </div>
   );
 }

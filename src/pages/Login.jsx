@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { LogIn, Eye, EyeOff } from 'lucide-react';
-import { Form, Button, Card, Container, Badge, InputGroup } from 'react-bootstrap';
+import { Form, Button, Card, InputGroup } from 'react-bootstrap';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -15,6 +15,13 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    if (!email || !password) {
+      toast.error('Please enter a valid credentials');
+      return false;
+    }
+
     setLoading(true);
 
     try {
@@ -22,69 +29,72 @@ export default function Login() {
       toast.success('Login successful!');
       navigate('/');
     } catch (error) {
-      toast.error(error.message || 'Login failed. Please check your credentials.');
+      // Check if it's an access denied error
+      if (error.isAccessDenied || error.message === 'Access denied') {
+        toast.error('Access denied');
+      } else {
+        // Invalid credentials error
+        toast.error('Please enter a valid credentials');
+      }
     } finally {
       setLoading(false);
     }
+    
+    return false;
   };
 
   return (
-    <>
-      <style>{`
-        .placeholder-white::placeholder {
-          color: rgba(255, 255, 255, 0.7) !important;
-        }
-        .placeholder-white:-ms-input-placeholder {
-          color: rgba(255, 255, 255, 0.7) !important;
-        }
-        .placeholder-white::-ms-input-placeholder {
-          color: rgba(255, 255, 255, 0.7) !important;
-        }
-      `}</style>
     <div style={{
       minHeight: '100vh',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
+      position: 'relative',
+      backgroundColor: '#E8F0F8',
       backgroundImage: 'url(/logo-1.png)',
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
+      backgroundSize: '1100px auto',
+      backgroundPosition: 'left center',
       backgroundRepeat: 'no-repeat',
-      padding: '20px',
-      position: 'relative'
+      padding: '20px'
     }}>
+      {/* Background overlay */}
       <div style={{
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%)',
+        background: 'linear-gradient(135deg, rgba(232, 240, 248, 0.7) 0%, rgba(230, 242, 255, 0.7) 100%)',
         zIndex: 0
       }}></div>
-      <Container style={{ position: 'relative', zIndex: 1 }}>
-        <div className="d-flex justify-content-center">
+
+      {/* Centered login form */}
+      <div style={{ 
+        position: 'relative', 
+        zIndex: 1,
+        width: '100%',
+        maxWidth: '450px'
+      }}>
           <Card style={{
             width: '100%',
-            maxWidth: '450px',
             borderRadius: '24px',
             boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.1) 100%)',
+            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%)',
             backdropFilter: 'blur(20px) saturate(180%)',
             WebkitBackdropFilter: 'blur(20px) saturate(180%)',
             border: '1px solid rgba(255, 255, 255, 0.4)',
             overflow: 'hidden',
             transition: 'transform 0.3s ease, box-shadow 0.3s ease'
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-5px)';
-            e.currentTarget.style.boxShadow = '0 25px 70px rgba(0, 0, 0, 0.35)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 20px 60px rgba(0, 0, 0, 0.3)';
-          }}
-          >
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-5px)';
+              e.currentTarget.style.boxShadow = '0 25px 70px rgba(0, 0, 0, 0.35)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 20px 60px rgba(0, 0, 0, 0.3)';
+            }}
+            >
             <Card.Body className="p-5">
               <div className="text-center mb-5">
                 <div
@@ -111,17 +121,15 @@ export default function Login() {
                 </div>
                 <h2 className="fw-bold mb-2" style={{ 
                   fontSize: '28px', 
-                  color: '#ffffff',
-                  letterSpacing: '-0.5px',
-                  textShadow: '0 2px 10px rgba(0, 0, 0, 0.3)'
+                  color: '#1a1a1a',
+                  letterSpacing: '-0.5px'
                 }}>
                   WSSC Admin Portal
                 </h2>
                 <p className="mb-0" style={{ 
-                  color: 'rgba(255, 255, 255, 0.9)', 
+                  color: '#666666', 
                   fontSize: '15px',
-                  fontWeight: '500',
-                  textShadow: '0 1px 5px rgba(0, 0, 0, 0.2)'
+                  fontWeight: '500'
                 }}>
                   Sign in to continue
                 </p>
@@ -130,10 +138,9 @@ export default function Login() {
               <Form onSubmit={handleSubmit}>
                 <Form.Group className="mb-4">
                   <Form.Label className="fw-semibold mb-2" style={{ 
-                    color: '#ffffff',
+                    color: '#333333',
                     fontSize: '14px',
-                    letterSpacing: '0.3px',
-                    textShadow: '0 1px 3px rgba(0, 0, 0, 0.3)'
+                    letterSpacing: '0.3px'
                   }}>
                     Email Address
                   </Form.Label>
@@ -146,32 +153,31 @@ export default function Login() {
                     style={{
                       padding: '14px 16px',
                       fontSize: '15px',
-                      border: '2px solid rgba(255, 255, 255, 0.3)',
+                      border: '2px solid rgba(102, 126, 234, 0.5)',
                       borderRadius: '12px',
                       transition: 'all 0.3s ease',
-                      backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                      color: '#ffffff'
+                      backgroundColor: '#ffffff',
+                      color: '#333333',
+                      boxShadow: '0 2px 8px rgba(102, 126, 234, 0.1)'
                     }}
-                    className="placeholder-white"
                     onFocus={(e) => {
-                      e.target.style.borderColor = '#ffffff';
-                      e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
-                      e.target.style.boxShadow = '0 0 0 3px rgba(255, 255, 255, 0.2)';
+                      e.target.style.borderColor = '#667eea';
+                      e.target.style.backgroundColor = '#ffffff';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.2), 0 4px 12px rgba(102, 126, 234, 0.15)';
                     }}
                     onBlur={(e) => {
-                      e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                      e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-                      e.target.style.boxShadow = 'none';
+                      e.target.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                      e.target.style.backgroundColor = '#ffffff';
+                      e.target.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.1)';
                     }}
                   />
                 </Form.Group>
 
                 <Form.Group className="mb-4">
                   <Form.Label className="fw-semibold mb-2" style={{ 
-                    color: '#ffffff',
+                    color: '#333333',
                     fontSize: '14px',
-                    letterSpacing: '0.3px',
-                    textShadow: '0 1px 3px rgba(0, 0, 0, 0.3)'
+                    letterSpacing: '0.3px'
                   }}>
                     Password
                   </Form.Label>
@@ -185,35 +191,37 @@ export default function Login() {
                       style={{
                         padding: '14px 16px',
                         fontSize: '15px',
-                        border: '2px solid rgba(255, 255, 255, 0.3)',
+                        border: '2px solid rgba(102, 126, 234, 0.5)',
                         borderRight: 'none',
                         borderRadius: '12px 0 0 12px',
                         transition: 'all 0.3s ease',
-                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                        color: '#ffffff'
+                        backgroundColor: '#ffffff',
+                        color: '#333333',
+                        boxShadow: '0 2px 8px rgba(102, 126, 234, 0.1)'
                       }}
-                      className="placeholder-white"
                       onFocus={(e) => {
-                        e.target.style.borderColor = '#ffffff';
-                        e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
-                        e.target.style.boxShadow = '0 0 0 3px rgba(255, 255, 255, 0.2)';
+                        e.target.style.borderColor = '#667eea';
+                        e.target.style.backgroundColor = '#ffffff';
+                        e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.2), 0 4px 12px rgba(102, 126, 234, 0.15)';
                         const inputGroup = e.target.closest('.input-group');
                         if (inputGroup) {
                           const textElement = inputGroup.querySelector('.input-group-text');
                           if (textElement) {
-                            textElement.style.borderColor = '#ffffff';
+                            textElement.style.borderColor = '#667eea';
+                            textElement.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.15)';
                           }
                         }
                       }}
                       onBlur={(e) => {
-                        e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                        e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-                        e.target.style.boxShadow = 'none';
+                        e.target.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                        e.target.style.backgroundColor = '#ffffff';
+                        e.target.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.1)';
                         const inputGroup = e.target.closest('.input-group');
                         if (inputGroup) {
                           const textElement = inputGroup.querySelector('.input-group-text');
                           if (textElement) {
-                            textElement.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+                            textElement.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                            textElement.style.boxShadow = 'none';
                           }
                         }
                       }}
@@ -222,27 +230,30 @@ export default function Login() {
                       onClick={() => setShowPassword(!showPassword)}
                       style={{
                         cursor: 'pointer',
-                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                        border: '2px solid rgba(255, 255, 255, 0.3)',
+                        backgroundColor: '#ffffff',
+                        border: '2px solid rgba(102, 126, 234, 0.5)',
                         borderLeft: 'none',
                         borderRadius: '0 12px 12px 0',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         padding: '0 18px',
-                        transition: 'all 0.3s ease'
+                        transition: 'all 0.3s ease',
+                        boxShadow: '0 2px 8px rgba(102, 126, 234, 0.1)'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+                        e.currentTarget.style.backgroundColor = '#f8f9fa';
+                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.15)';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                        e.currentTarget.style.backgroundColor = '#ffffff';
+                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.1)';
                       }}
                     >
                       {showPassword ? (
-                        <EyeOff size={20} color="#ffffff" />
+                        <EyeOff size={20} color="#667eea" />
                       ) : (
-                        <Eye size={20} color="#ffffff" />
+                        <Eye size={20} color="#667eea" />
                       )}
                     </InputGroup.Text>
                   </InputGroup>
@@ -288,9 +299,8 @@ export default function Login() {
             </Card.Body>
           </Card>
         </div>
-      </Container>
     </div>
-    </>
   );
 }
+
 

@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Card, Table, Badge, Button, Spinner, Modal, Form, InputGroup, Row, Col } from 'react-bootstrap';
 import { Plus, Edit, Trash2, Search } from 'lucide-react';
 import TablePagination from '../components/common/TablePagination';
+import ConfirmationModal from '../components/common/ConfirmationModal';
 import { formatDate } from '../utils/format.jsx';
 import { useAuth } from '../contexts/AuthContext';
 import { hasFullControl } from '../utils/roles';
@@ -17,6 +18,8 @@ export default function Holidays() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
   const [formData, setFormData] = useState({
     date: '',
     name: '',
@@ -61,15 +64,24 @@ export default function Holidays() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this holiday?')) return;
+  const handleDeleteClick = (id) => {
+    setDeleteId(id);
+    setShowConfirmModal(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
 
     try {
-      await api.delete(`/holidays/${id}`);
+      await api.delete(`/holidays/${deleteId}`);
       toast.success('Holiday deleted successfully');
+      setShowConfirmModal(false);
+      setDeleteId(null);
       fetchHolidays();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to delete holiday');
+      setShowConfirmModal(false);
+      setDeleteId(null);
     }
   };
 
@@ -190,7 +202,7 @@ export default function Holidays() {
                           <Button
                             variant="outline-danger"
                             size="sm"
-                            onClick={() => handleDelete(holiday.id)}
+                            onClick={() => handleDeleteClick(holiday.id)}
                           >
                             <Trash2 size={16} />
                           </Button>
@@ -273,6 +285,16 @@ export default function Holidays() {
           </Form>
         </Modal>
       )}
+
+      <ConfirmationModal
+        show={showConfirmModal}
+        onHide={() => {
+          setShowConfirmModal(false);
+          setDeleteId(null);
+        }}
+        onConfirm={handleDelete}
+        message="Are you sure you want to delete this holiday?"
+      />
     </div>
   );
 }

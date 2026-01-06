@@ -5,6 +5,7 @@ import { Plus, Search, Edit, Trash2 } from 'lucide-react';
 import { Button, Card, Table, Badge, Form, InputGroup, Row, Col, Spinner } from 'react-bootstrap';
 import SearchableSelect from '../components/common/SearchableSelect';
 import TablePagination from '../components/common/TablePagination';
+import ConfirmationModal from '../components/common/ConfirmationModal';
 import UserForm from '../components/users/UserForm';
 import { useAuth } from '../contexts/AuthContext';
 import { hasFullControl, getRoleLabel, getRoleBadgeColor, ROLE_OPTIONS } from '../utils/roles';
@@ -20,6 +21,8 @@ export default function Users() {
   const [filterRole, setFilterRole] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
 
   const role = currentUser?.role?.toLowerCase() || '';
   const canCreate = hasFullControl(role) || role === 'general_manager';
@@ -41,15 +44,24 @@ export default function Users() {
     }
   };
 
-  const handleDelete = async (userId) => {
-    if (!window.confirm('Are you sure you want to delete this user?')) return;
+  const handleDeleteClick = (userId) => {
+    setDeleteId(userId);
+    setShowConfirmModal(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
 
     try {
-      await api.delete(`/users/${userId}`);
+      await api.delete(`/users/${deleteId}`);
       toast.success('User deleted successfully');
+      setShowConfirmModal(false);
+      setDeleteId(null);
       fetchUsers();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to delete user');
+      setShowConfirmModal(false);
+      setDeleteId(null);
     }
   };
 
@@ -189,7 +201,7 @@ export default function Users() {
                             <Button
                               variant="outline-danger"
                               size="sm"
-                              onClick={() => handleDelete(user.user_id)}
+                              onClick={() => handleDeleteClick(user.user_id)}
                             >
                               <Trash2 size={16} />
                             </Button>
@@ -232,6 +244,16 @@ export default function Users() {
           }}
         />
       )}
+
+      <ConfirmationModal
+        show={showConfirmModal}
+        onHide={() => {
+          setShowConfirmModal(false);
+          setDeleteId(null);
+        }}
+        onConfirm={handleDelete}
+        message="Are you sure you want to delete this user?"
+      />
     </div>
   );
 }
