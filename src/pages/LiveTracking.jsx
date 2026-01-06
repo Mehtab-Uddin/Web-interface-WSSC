@@ -10,6 +10,7 @@ import { formatStaffName, formatStaffNameString } from '../utils/format.jsx';
 export default function LiveTracking() {
   const [trackingData, setTrackingData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [filters, setFilters] = useState({
     staffId: '',
     date: new Date().toISOString().split('T')[0]
@@ -19,13 +20,13 @@ export default function LiveTracking() {
   const [refreshInterval, setRefreshInterval] = useState(null);
 
   useEffect(() => {
-    fetchTracking();
+    fetchTracking(true);
     fetchStaff();
     
     // Set up auto-refresh every 10 seconds if enabled
     if (autoRefresh) {
       const interval = setInterval(() => {
-        fetchTracking();
+        fetchTracking(false); // Don't show loading on auto-refresh
       }, 10000); // Refresh every 10 seconds
       setRefreshInterval(interval);
       
@@ -43,15 +44,33 @@ export default function LiveTracking() {
 
   const fetchStaff = async () => {
     try {
-      const response = await api.get('/users/staff');
-      setStaffList(response.data.data || []);
+      // Fetch all users (staff, supervisors, managers, general managers) for the filter dropdown
+      const response = await api.get('/users');
+      // Filter to only include active users with relevant roles for tracking
+      const allUsers = response.data.data || [];
+      const trackingRoles = ['staff', 'supervisor', 'manager', 'general_manager', 'sub_engineer'];
+      const filteredUsers = allUsers.filter(user => 
+        trackingRoles.includes((user.role || '').toLowerCase()) && user.is_active !== false
+      );
+      setStaffList(filteredUsers);
     } catch (error) {
-      console.error('Failed to fetch staff:', error);
+      console.error('Failed to fetch users:', error);
+      // Fallback to staff only if main endpoint fails
+      try {
+        const staffResponse = await api.get('/users/staff');
+        setStaffList(staffResponse.data.data || []);
+      } catch (fallbackError) {
+        console.error('Failed to fetch staff as fallback:', fallbackError);
+      }
     }
   };
 
-  const fetchTracking = async () => {
-    setLoading(true);
+  const fetchTracking = async (showLoading = false) => {
+    // Only show loading spinner on initial load or manual refresh
+    const shouldShowLoading = showLoading || isInitialLoad;
+    if (shouldShowLoading) {
+      setLoading(true);
+    }
     try {
       const params = new URLSearchParams();
       if (filters.staffId) params.append('staffId', filters.staffId);
@@ -60,17 +79,20 @@ export default function LiveTracking() {
       const response = await api.get(`/live-tracking?${params.toString()}`);
       const data = response.data.data || [];
       setTrackingData(data);
+      setIsInitialLoad(false);
     } catch (error) {
       toast.error('Failed to load live tracking data');
       console.error(error);
     } finally {
-      setLoading(false);
+      if (shouldShowLoading) {
+        setLoading(false);
+      }
     }
   };
 
   // Auto-refresh when filters change
   useEffect(() => {
-    fetchTracking();
+    fetchTracking(true); // Show loading when filters change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.staffId, filters.date]);
 
@@ -78,12 +100,11 @@ export default function LiveTracking() {
     setFilters(prev => ({ ...prev, [name]: value }));
   };
 
-  // Filter tracking data to show only those with locations
+  // Show all active tracking data (including those without locations yet)
+  // Staff with active clock-ins will show even if they haven't started tracking locations
   const activeTrackingData = trackingData.filter(track => {
-    const locations = track.locations 
-      ? (typeof track.locations === 'string' ? JSON.parse(track.locations) : track.locations)
-      : [];
-    return locations.length > 0;
+    // Show all active tracking records, or records that have locations
+    return track.is_active || track.isActive;
   });
 
   if (loading && trackingData.length === 0) {
@@ -113,7 +134,7 @@ export default function LiveTracking() {
           </Button>
           <Button
             variant="primary"
-            onClick={fetchTracking}
+            onClick={() => fetchTracking(true)}
             size="sm"
             className="d-flex align-items-center gap-2"
           >
@@ -148,7 +169,7 @@ export default function LiveTracking() {
             />
           </Col>
           <Col md={4} className="d-flex align-items-end">
-            <Button variant="primary" onClick={fetchTracking} className="w-100">
+            <Button variant="primary" onClick={() => fetchTracking(true)} className="w-100">
               Apply Filters
             </Button>
           </Col>

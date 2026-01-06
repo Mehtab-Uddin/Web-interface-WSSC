@@ -132,7 +132,7 @@ export default function Assignments() {
                   <tr>
                     <th>Staff</th>
                     <th>Supervisor</th>
-                    <th>Zone</th>
+                    <th>Beat</th>
                     <th>Location</th>
                     <th>Status</th>
                     {canManage && <th>Actions</th>}

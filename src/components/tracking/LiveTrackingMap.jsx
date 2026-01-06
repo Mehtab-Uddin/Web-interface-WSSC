@@ -58,7 +58,7 @@ export default function LiveTrackingMap({ trackingData }) {
     setAllLocations(locations);
   }, [trackingData]);
 
-  // Get unique staff members with tracking data
+  // Get tracks with location data for map display
   const activeTracks = trackingData.filter(track => {
     const locations = track.locations 
       ? (typeof track.locations === 'string' ? JSON.parse(track.locations) : track.locations)
@@ -66,18 +66,10 @@ export default function LiveTrackingMap({ trackingData }) {
     return locations.length > 0;
   });
 
-  if (activeTracks.length === 0) {
-    return (
-      <div style={{ height: 'calc(100vh - 250px)', minHeight: '600px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5', borderRadius: '10px' }}>
-        <div className="text-muted text-center">
-          <p className="mb-2">No active tracking data available</p>
-          <small>Staff members will appear here when they start tracking their movements</small>
-        </div>
-      </div>
-    );
-  }
+  // Get all active staff (including those without locations yet)
+  const allActiveStaff = trackingData.filter(track => track.is_active || track.isActive);
 
-  // Calculate center from all locations
+  // Calculate center from all locations, or use default
   const allBounds = allLocations
     .filter(loc => (loc.lat || loc.latitude) && (loc.lng || loc.longitude))
     .map(loc => [loc.lat || loc.latitude, loc.lng || loc.longitude]);
@@ -87,11 +79,48 @@ export default function LiveTrackingMap({ trackingData }) {
     : [33.6844, 73.0479]; // Default to Islamabad, Pakistan
 
   return (
-    <div style={{ height: 'calc(100vh - 250px)', minHeight: '600px', borderRadius: '10px', overflow: 'hidden', border: '1px solid #dee2e6' }}>
+    <div style={{ 
+      height: 'calc(100vh - 250px)', 
+      minHeight: '600px', 
+      borderRadius: '10px', 
+      overflow: 'hidden', 
+      border: '1px solid #dee2e6', 
+      position: 'relative',
+      backgroundColor: '#f5f5f5'
+    }}>
+      {activeTracks.length === 0 && (
+        <div style={{ 
+          position: 'absolute', 
+          top: '50%', 
+          left: '50%', 
+          transform: 'translate(-50%, -50%)', 
+          zIndex: 1000, 
+          background: 'rgba(255, 255, 255, 0.95)', 
+          padding: '20px 30px', 
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          textAlign: 'center',
+          pointerEvents: 'none'
+        }}>
+          {allActiveStaff.length > 0 ? (
+            <>
+              <p className="text-muted mb-2" style={{ margin: 0, fontSize: '1.1rem', fontWeight: 500 }}>
+                {allActiveStaff.length} staff member{allActiveStaff.length > 1 ? 's' : ''} clocked in
+              </p>
+              <small className="text-muted">Location tracking will appear here once staff start sharing their location</small>
+            </>
+          ) : (
+            <>
+              <p className="text-muted mb-2" style={{ margin: 0, fontSize: '1.1rem', fontWeight: 500 }}>No active tracking data available</p>
+              <small className="text-muted">Staff members will appear here when they clock in and start tracking their movements</small>
+            </>
+          )}
+        </div>
+      )}
       <MapContainer
         center={center}
-        zoom={13}
-        style={{ height: '100%', width: '100%' }}
+        zoom={activeTracks.length > 0 ? 13 : 10}
+        style={{ height: '100%', width: '100%', zIndex: 1 }}
         scrollWheelZoom={true}
       >
         <TileLayer
@@ -99,7 +128,7 @@ export default function LiveTrackingMap({ trackingData }) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         
-        <MapBounds allLocations={allLocations} />
+        {activeTracks.length > 0 && <MapBounds allLocations={allLocations} />}
 
         {/* Render each staff member's tracking */}
         {activeTracks.map((track, trackIndex) => {

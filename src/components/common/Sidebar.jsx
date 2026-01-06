@@ -33,7 +33,7 @@ export default function Sidebar() {
     { path: '/leave', icon: Calendar, label: 'Leave Management', access: hasExecAccess },
     { path: '/assignments', icon: UserCheck, label: 'Assignments', access: hasExecAccess },
     { path: '/locations', icon: MapPin, label: 'Locations', access: hasFullAccess || isGM },
-    { path: '/zones', icon: Layers, label: 'Zones', access: hasFullAccess || isGM },
+    { path: '/zones', icon: Layers, label: 'Beats', access: hasFullAccess || isGM },
     { path: '/departments', icon: Building, label: 'Departments', access: hasFullAccess },
     { path: '/performance', icon: FileText, label: 'Performance', access: hasExecAccess },
     { path: '/approvals', icon: CheckCircle, label: 'Approvals', access: hasExecAccess },

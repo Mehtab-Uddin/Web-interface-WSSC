@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { Card, Table, Button, Spinner, Modal, Form, Row, Col, InputGroup } from 'react-bootstrap';
+import { Card, Table, Button, Spinner, Modal, Form, Row, Col, InputGroup, Nav, Tab } from 'react-bootstrap';
 import { Plus, Edit, Trash2, Search } from 'lucide-react';
 import SearchableSelect from '../components/common/SearchableSelect';
 import TablePagination from '../components/common/TablePagination';
+import ZonesMap from '../components/tracking/ZonesMap';
 import { useAuth } from '../contexts/AuthContext';
 import { hasFullControl, hasExecutivePrivileges } from '../utils/roles';
 
@@ -50,7 +51,7 @@ export default function Zones() {
       const response = await api.get('/zones');
       setZones(response.data.data || []);
     } catch (error) {
-      toast.error('Failed to load zones');
+      toast.error('Failed to load beats');
       console.error(error);
     } finally {
       setLoading(false);
@@ -69,28 +70,28 @@ export default function Zones() {
 
       if (editingZone) {
         await api.put(`/zones/${editingZone.id}`, payload);
-        toast.success('Zone updated successfully');
+        toast.success('Beat updated successfully');
       } else {
         await api.post('/zones', payload);
-        toast.success('Zone created successfully');
+        toast.success('Beat created successfully');
       }
       setShowForm(false);
       setEditingZone(null);
       fetchZones();
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to save zone');
+      toast.error(error.response?.data?.error || 'Failed to save beat');
     }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this zone?')) return;
+    if (!window.confirm('Are you sure you want to delete this beat?')) return;
 
     try {
       await api.delete(`/zones/${id}`);
-      toast.success('Zone deleted successfully');
+      toast.success('Beat deleted successfully');
       fetchZones();
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to delete zone');
+      toast.error(error.response?.data?.error || 'Failed to delete beat');
     }
   };
 
@@ -127,7 +128,7 @@ export default function Zones() {
   return (
     <div className="fade-in">
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h1 className="fw-bold">Zones Management</h1>
+        <h1 className="fw-bold">Beats Management</h1>
         {canManage && (
           <Button
             variant="primary"
@@ -146,31 +147,48 @@ export default function Zones() {
             className="btn-custom d-flex align-items-center gap-2"
           >
             <Plus size={20} />
-            <span>Add Zone</span>
+            <span>Add Beat</span>
           </Button>
         )}
       </div>
 
-      <Card className="custom-card mb-4">
-        <Row>
-          <Col md={6}>
-            <InputGroup>
-              <InputGroup.Text>
-                <Search size={18} />
-              </InputGroup.Text>
-              <Form.Control
-                type="text"
-                placeholder="Search zones..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="form-control-custom"
-              />
-            </InputGroup>
-          </Col>
-        </Row>
-      </Card>
+      <Tab.Container defaultActiveKey="map">
+        <Nav variant="tabs" className="mb-3">
+          <Nav.Item>
+            <Nav.Link eventKey="map">Map View</Nav.Link>
+          </Nav.Item>
+          <Nav.Item>
+            <Nav.Link eventKey="list">List View</Nav.Link>
+          </Nav.Item>
+        </Nav>
 
-      <Card className="custom-card">
+        <Tab.Content>
+          <Tab.Pane eventKey="map">
+            <Card className="custom-card" style={{ padding: 0 }}>
+              <ZonesMap zones={zones} />
+            </Card>
+          </Tab.Pane>
+          <Tab.Pane eventKey="list">
+            <Card className="custom-card mb-4">
+              <Row>
+                <Col md={6}>
+                  <InputGroup>
+                    <InputGroup.Text>
+                      <Search size={18} />
+                    </InputGroup.Text>
+                    <Form.Control
+                      type="text"
+                      placeholder="Search beats..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="form-control-custom"
+                    />
+                  </InputGroup>
+                </Col>
+              </Row>
+            </Card>
+
+            <Card className="custom-card">
         <div className="table-responsive">
           <Table className="custom-table" hover>
             <thead>
@@ -187,7 +205,7 @@ export default function Zones() {
               {paginatedZones.length === 0 ? (
                 <tr>
                   <td colSpan={canManage ? 6 : 5} className="text-center py-4 text-muted">
-                    No zones found
+                    No beats found
                   </td>
                 </tr>
               ) : (
@@ -255,6 +273,9 @@ export default function Zones() {
           />
         )}
       </Card>
+          </Tab.Pane>
+        </Tab.Content>
+      </Tab.Container>
 
       {showForm && (
         <Modal show={true} onHide={() => {
@@ -262,7 +283,7 @@ export default function Zones() {
           setEditingZone(null);
         }} size="lg">
           <Modal.Header closeButton>
-            <Modal.Title>{editingZone ? 'Edit Zone' : 'Create Zone'}</Modal.Title>
+            <Modal.Title>{editingZone ? 'Edit Beat' : 'Create Beat'}</Modal.Title>
           </Modal.Header>
           <Form onSubmit={handleSubmit}>
             <Modal.Body>

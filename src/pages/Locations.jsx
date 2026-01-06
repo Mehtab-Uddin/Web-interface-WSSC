@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { Card, Table, Badge, Button, Spinner, Modal, Form, Row, Col, InputGroup } from 'react-bootstrap';
+import { Card, Table, Badge, Button, Spinner, Modal, Form, Row, Col, InputGroup, Nav, Tab } from 'react-bootstrap';
 import { Plus, Edit, Trash2, Search } from 'lucide-react';
 import TablePagination from '../components/common/TablePagination';
+import LocationsMap from '../components/tracking/LocationsMap';
 import { useAuth } from '../contexts/AuthContext';
 import { hasFullControl, hasExecutivePrivileges } from '../utils/roles';
 
@@ -147,26 +148,43 @@ export default function Locations() {
         )}
       </div>
 
-      <Card className="custom-card mb-4">
-        <Row>
-          <Col md={6}>
-            <InputGroup>
-              <InputGroup.Text>
-                <Search size={18} />
-              </InputGroup.Text>
-              <Form.Control
-                type="text"
-                placeholder="Search locations..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="form-control-custom"
-              />
-            </InputGroup>
-          </Col>
-        </Row>
-      </Card>
+      <Tab.Container defaultActiveKey="map">
+        <Nav variant="tabs" className="mb-3">
+          <Nav.Item>
+            <Nav.Link eventKey="map">Map View</Nav.Link>
+          </Nav.Item>
+          <Nav.Item>
+            <Nav.Link eventKey="list">List View</Nav.Link>
+          </Nav.Item>
+        </Nav>
 
-      <Card className="custom-card">
+        <Tab.Content>
+          <Tab.Pane eventKey="map">
+            <Card className="custom-card" style={{ padding: 0 }}>
+              <LocationsMap locations={locations} />
+            </Card>
+          </Tab.Pane>
+          <Tab.Pane eventKey="list">
+            <Card className="custom-card mb-4">
+              <Row>
+                <Col md={6}>
+                  <InputGroup>
+                    <InputGroup.Text>
+                      <Search size={18} />
+                    </InputGroup.Text>
+                    <Form.Control
+                      type="text"
+                      placeholder="Search locations..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="form-control-custom"
+                    />
+                  </InputGroup>
+                </Col>
+              </Row>
+            </Card>
+
+            <Card className="custom-card">
         <div className="table-responsive">
           <Table className="custom-table" hover>
             <thead>
@@ -255,6 +273,9 @@ export default function Locations() {
           />
         )}
       </Card>
+          </Tab.Pane>
+        </Tab.Content>
+      </Tab.Container>
 
       {showForm && (
         <Modal show={true} onHide={() => {
