@@ -216,53 +216,6 @@ router.get('/status/:staffId?', protect, async (req, res) => {
   }
 });
 
-// @route   GET /api/live-tracking
-// @desc    Get all live tracking data with optional filters
-// @access  Private
-// NOTE: This route MUST be defined BEFORE /active and /:staffId
-router.get('/', protect, async (req, res) => {
-  try {
-    const { staffId, date } = req.query;
-    const queryDate = date || new Date().toISOString().split('T')[0];
-    
-    const conditions = { date: queryDate };
-    if (staffId) {
-      conditions.staffId = staffId;
-    }
-
-    const trackings = await LiveTracking.find(conditions, {
-      populate: ['staffId'],
-      sort: { lastUpdate: -1 }
-    });
-
-    const formatted = trackings.map(track => {
-      const staff = track.staffId_populated;
-      return {
-        id: track.id,
-        staff_id: staff ? staff.id : track.staffId,
-        staff_name: staff ? (staff.fullName || staff.username || 'Unknown') : 'Unknown',
-        emp_no: staff ? (staff.empNo || null) : null,
-        empNo: staff ? (staff.empNo || null) : null,
-        date: track.date,
-        is_active: track.isActive,
-        start_time: track.startTime,
-        last_update: track.lastUpdate,
-        locations: track.locations || []
-      };
-    });
-
-    res.json({
-      success: true,
-      data: formatted
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // @route   GET /api/live-tracking/active
 // @desc    Get active live locations
 // @access  Private
@@ -289,8 +242,6 @@ router.get('/active', protect, async (req, res) => {
         id: track.id,
         staff_id: staff ? staff.id : track.staffId,
         staff_name: staff ? (staff.fullName || staff.username || 'Unknown') : 'Unknown',
-        emp_no: staff ? (staff.empNo || null) : null,
-        empNo: staff ? (staff.empNo || null) : null,
         department: staff ? staff.department : null,
         departments: staff ? (staff.departments || []) : [],
         lat: lastLocation?.lat || null,

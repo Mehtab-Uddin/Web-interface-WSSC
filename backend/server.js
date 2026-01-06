@@ -40,33 +40,8 @@ try {
   process.exit(1);
 }
 
-// CORS configuration - allows web app and mobile app to access the API
-// Only this backend has database access credentials
-const allowedOrigins = [
-  'http://localhost:8080',  // Web app local dev
-  'http://localhost:5173',  // Vite default dev port
-  'http://localhost:3000',  // Alternative dev port
-  // Add your production web app domain here:
-  // 'https://your-web-domain.com',
-];
-
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
-    // Allow all origins if CORS_ORIGIN is set to '*'
-    if (process.env.CORS_ORIGIN === '*') {
-      return callback(null, true);
-    }
-    // Check if origin is in allowed list
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      // In production, you might want to be stricter
-      // For now, allow all to maintain compatibility
-      callback(null, true);
-    }
-  },
+  origin: process.env.CORS_ORIGIN || '*',
   credentials: true
 }));
 

@@ -31,8 +31,6 @@ router.get('/', protect, async (req, res) => {
       id: rev.id,
       staff_id: rev.staffId_populated ? rev.staffId_populated.id : rev.staffId,
       staff_name: rev.staffId_populated ? (rev.staffId_populated.fullName || 'Unknown') : 'Unknown',
-      emp_no: rev.staffId_populated ? (rev.staffId_populated.empNo || null) : null,
-      empNo: rev.staffId_populated ? (rev.staffId_populated.empNo || null) : null,
       supervisor_id: rev.supervisorId_populated ? rev.supervisorId_populated.id : rev.supervisorId,
       supervisor_name: rev.supervisorId_populated ? rev.supervisorId_populated.fullName : null,
       location_id: rev.locationId_populated ? rev.locationId_populated.id : rev.locationId,
