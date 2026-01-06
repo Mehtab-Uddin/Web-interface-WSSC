@@ -16,8 +16,17 @@ export default function LiveTracking() {
     date: new Date().toISOString().split('T')[0]
   });
   const [staffList, setStaffList] = useState([]);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  // Load auto-refresh state from localStorage, default to true if not set
+  const [autoRefresh, setAutoRefresh] = useState(() => {
+    const saved = localStorage.getItem('liveTrackingAutoRefresh');
+    return saved !== null ? saved === 'true' : true;
+  });
   const [refreshInterval, setRefreshInterval] = useState(null);
+
+  // Save auto-refresh state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('liveTrackingAutoRefresh', autoRefresh.toString());
+  }, [autoRefresh]);
 
   useEffect(() => {
     fetchTracking(true);

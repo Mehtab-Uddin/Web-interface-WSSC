@@ -52,7 +52,7 @@ export default function Login() {
       position: 'relative',
       backgroundColor: '#E8F0F8',
       backgroundImage: 'url(/logo-1.png)',
-      backgroundSize: '1100px auto',
+      backgroundSize: 'clamp(400px, 1100px, 100%) auto',
       backgroundPosition: 'left center',
       backgroundRepeat: 'no-repeat',
       padding: '20px'
@@ -73,7 +73,8 @@ export default function Login() {
         position: 'relative', 
         zIndex: 1,
         width: '100%',
-        maxWidth: '450px'
+        maxWidth: '450px',
+        padding: '0 10px'
       }}>
           <Card style={{
             width: '100%',

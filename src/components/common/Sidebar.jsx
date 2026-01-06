@@ -13,11 +13,13 @@ import {
   Settings,
   Activity,
   BarChart3,
-  Layers
+  Layers,
+  X
 } from 'lucide-react';
 import { hasFullControl, hasExecutivePrivileges } from '../../utils/roles';
+import { Button } from 'react-bootstrap';
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
   const { user } = useAuth();
   const role = user?.role?.toLowerCase() || '';
   const isSuperAdmin = role === 'super_admin';
@@ -43,11 +45,35 @@ export default function Sidebar() {
     { path: '/settings', icon: Settings, label: 'Settings', access: hasFullAccess },
   ].filter(item => item.access);
 
+  const handleNavClick = () => {
+    // Close sidebar on mobile when a link is clicked
+    if (window.innerWidth <= 768) {
+      onClose();
+    }
+  };
+
   return (
-    <aside className="sidebar-container">
+    <aside className={`sidebar-container ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-header">
-        <h3>WSSC Admin</h3>
-        <p>{user?.fullName || user?.email}</p>
+        <div className="d-flex justify-content-between align-items-center">
+          <div>
+            <h3>WSSC Admin</h3>
+            <p>{user?.fullName || user?.email}</p>
+          </div>
+          <Button
+            variant="link"
+            className="d-md-none close-sidebar-btn"
+            onClick={onClose}
+            style={{
+              padding: '4px',
+              color: 'white',
+              border: 'none',
+              background: 'transparent'
+            }}
+          >
+            <X size={20} />
+          </Button>
+        </div>
       </div>
       <nav className="sidebar-nav">
         {menuItems.map((item) => {
@@ -56,6 +82,7 @@ export default function Sidebar() {
             <div key={item.path} className="nav-item-custom">
               <NavLink
                 to={item.path}
+                onClick={handleNavClick}
                 className={({ isActive }) =>
                   `nav-link-custom ${isActive ? 'active' : ''}`
                 }

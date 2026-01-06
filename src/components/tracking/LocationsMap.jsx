@@ -44,12 +44,7 @@ export default function LocationsMap({ locations, onLocationSelect }) {
   // Debug: Log locations with boundaries
   useEffect(() => {
     const locationsWithBoundaries = locations.filter(loc => loc.boundaries && Array.isArray(loc.boundaries) && loc.boundaries.length > 0);
-    if (locationsWithBoundaries.length > 0) {
-      console.log('Locations with boundaries:', locationsWithBoundaries.length);
-      locationsWithBoundaries.forEach(loc => {
-        console.log(`Location "${loc.name}": ${loc.boundaries.length} boundary points`);
-      });
-    }
+    // Locations with boundaries are processed for map display
   }, [locations]);
 
   useEffect(() => {

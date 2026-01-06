@@ -14,6 +14,20 @@ export default defineConfig({
     //     secure: true
     //   }
     // }
-  }
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    minify: 'esbuild',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          bootstrap: ['bootstrap', 'react-bootstrap'],
+          leaflet: ['leaflet', 'react-leaflet'],
+        },
+      },
+    },
+  },
 })
 
