@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { Plus, Search, Edit, Trash2 } from 'lucide-react';
@@ -8,7 +8,7 @@ import TablePagination from '../components/common/TablePagination';
 import ConfirmationModal from '../components/common/ConfirmationModal';
 import UserForm from '../components/users/UserForm';
 import { useAuth } from '../contexts/AuthContext';
-import { hasFullControl, getRoleLabel, getRoleBadgeColor, ROLE_OPTIONS } from '../utils/roles';
+import { hasFullControl, getRoleLabel, getRoleBadgeColor, ROLE_OPTIONS, normalizeRole, ROLE } from '../utils/roles';
 import { formatDate, formatStaffName } from '../utils/format.jsx';
 
 export default function Users() {
@@ -24,9 +24,30 @@ export default function Users() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
 
-  const role = currentUser?.role?.toLowerCase() || '';
-  const canCreate = hasFullControl(role) || role === 'general_manager';
-  const canDelete = hasFullControl(role);
+  const role = normalizeRole(currentUser?.role);
+  const isGeneralManager = role === ROLE.GENERAL_MANAGER;
+  const isFullControlUser = hasFullControl(role);
+  const canCreate = isFullControlUser || isGeneralManager;
+  const canEdit = isFullControlUser; // Only super_admin and CEO can edit
+  const canDelete = isFullControlUser;
+
+  // Get user departments for General Manager filtering
+  const userDepartments = useMemo(() => {
+    const deptFields = [
+      ...(Array.isArray(currentUser?.departments) ? currentUser.departments : []),
+      currentUser?.department,
+      currentUser?.empDeptt,
+      currentUser?.emp_deptt,
+    ].filter(Boolean);
+    return Array.from(new Set(deptFields.map((d) => String(d).trim()))).filter(Boolean);
+  }, [currentUser]);
+
+  const matchesDepartment = (deptValue, targets) => {
+    if (!targets || targets.length === 0) return true;
+    const normalizedTargets = targets.map((d) => String(d).trim().toLowerCase());
+    const value = String(deptValue || '').trim().toLowerCase();
+    return value && normalizedTargets.includes(value);
+  };
 
   useEffect(() => {
     fetchUsers();
@@ -65,15 +86,25 @@ export default function Users() {
     }
   };
 
-  const filteredUsers = users.filter((user) => {
-    const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = 
-      String(user.full_name || '').toLowerCase().includes(searchLower) ||
-      String(user.email || '').toLowerCase().includes(searchLower) ||
-      String(user.username || '').toLowerCase().includes(searchLower);
-    const matchesRole = !filterRole || user.role === filterRole;
-    return matchesSearch && matchesRole;
-  });
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      // Department filter for General Manager
+      if (isGeneralManager && userDepartments.length > 0) {
+        const userDept = user.emp_deptt || user.empDeptt || user.department;
+        if (!matchesDepartment(userDept, userDepartments)) {
+          return false;
+        }
+      }
+
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        String(user.full_name || '').toLowerCase().includes(searchLower) ||
+        String(user.email || '').toLowerCase().includes(searchLower) ||
+        String(user.username || '').toLowerCase().includes(searchLower);
+      const matchesRole = !filterRole || user.role === filterRole;
+      return matchesSearch && matchesRole;
+    });
+  }, [users, searchTerm, filterRole, isGeneralManager, userDepartments]);
 
   // Pagination
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
@@ -187,16 +218,18 @@ export default function Users() {
                     {canCreate && (
                       <td>
                         <div className="d-flex gap-2">
-                          <Button
-                            variant="outline-primary"
-                            size="sm"
-                            onClick={() => {
-                              setEditingUser(user);
-                              setShowForm(true);
-                            }}
-                          >
-                            <Edit size={16} />
-                          </Button>
+                          {canEdit && (
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              onClick={() => {
+                                setEditingUser(user);
+                                setShowForm(true);
+                              }}
+                            >
+                              <Edit size={16} />
+                            </Button>
+                          )}
                           {canDelete && (
                             <Button
                               variant="outline-danger"

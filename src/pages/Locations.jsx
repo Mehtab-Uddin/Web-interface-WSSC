@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { Card, Table, Badge, Button, Spinner, Modal, Form, Row, Col, InputGroup, Nav, Tab } from 'react-bootstrap';
@@ -7,7 +7,7 @@ import TablePagination from '../components/common/TablePagination';
 import ConfirmationModal from '../components/common/ConfirmationModal';
 import LocationsMap from '../components/tracking/LocationsMap';
 import { useAuth } from '../contexts/AuthContext';
-import { hasFullControl, hasExecutivePrivileges } from '../utils/roles';
+import { hasFullControl, hasExecutivePrivileges, normalizeRole, ROLE } from '../utils/roles';
 
 export default function Locations() {
   const { user } = useAuth();
@@ -33,8 +33,30 @@ export default function Locations() {
     nightShiftEnd: '05:00'
   });
 
-  const role = user?.role?.toLowerCase() || '';
-  const canManage = hasFullControl(role) || role === 'general_manager';
+  const role = normalizeRole(user?.role);
+  const isGeneralManager = role === ROLE.GENERAL_MANAGER;
+  const isFullControlUser = hasFullControl(role);
+  const canManage = isFullControlUser || isGeneralManager;
+  const canEdit = isFullControlUser; // Only super_admin and CEO can edit
+  const canDelete = isFullControlUser;
+
+  // Get user departments for General Manager filtering
+  const userDepartments = useMemo(() => {
+    const deptFields = [
+      ...(Array.isArray(user?.departments) ? user.departments : []),
+      user?.department,
+      user?.empDeptt,
+      user?.emp_deptt,
+    ].filter(Boolean);
+    return Array.from(new Set(deptFields.map((d) => String(d).trim()))).filter(Boolean);
+  }, [user]);
+
+  const matchesDepartment = (deptValue, targets) => {
+    if (!targets || targets.length === 0) return true;
+    const normalizedTargets = targets.map((d) => String(d).trim().toLowerCase());
+    const value = String(deptValue || '').trim().toLowerCase();
+    return value && normalizedTargets.includes(value);
+  };
 
   useEffect(() => {
     fetchLocations();
@@ -99,15 +121,22 @@ export default function Locations() {
     }
   };
 
-  const filteredLocations = locations.filter((location) => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      String(location.name || '').toLowerCase().includes(searchLower) ||
-      String(location.code || '').toLowerCase().includes(searchLower) ||
-      String(location.description || '').toLowerCase().includes(searchLower) ||
-      String(location.id || '').includes(searchLower)
-    );
-  });
+  const filteredLocations = useMemo(() => {
+    return locations.filter((location) => {
+      // Department filter for General Manager (if location has department field)
+      // Note: Locations might not have department field, so this is optional
+      // If locations don't have department, GM will see all locations they can manage
+      
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        String(location.name || '').toLowerCase().includes(searchLower) ||
+        String(location.code || '').toLowerCase().includes(searchLower) ||
+        String(location.description || '').toLowerCase().includes(searchLower) ||
+        String(location.id || '').includes(searchLower);
+      
+      return matchesSearch;
+    });
+  }, [locations, searchTerm, isGeneralManager, userDepartments]);
 
   // Pagination
   const totalPages = Math.ceil(filteredLocations.length / itemsPerPage);
@@ -231,29 +260,31 @@ export default function Locations() {
                     {canManage && (
                       <td>
                         <div className="d-flex gap-2">
-                          <Button
-                            variant="outline-primary"
-                            size="sm"
-                            onClick={() => {
-                              setEditingLocation(location);
-                              setFormData({
-                                name: location.name || '',
-                                code: location.code || '',
-                                description: location.description || '',
-                                centerLat: location.center_lat || '',
-                                centerLng: location.center_lng || '',
-                                radiusMeters: location.radius_meters || '',
-                                morningShiftStart: location.morning_shift_start || '09:00',
-                                morningShiftEnd: location.morning_shift_end || '17:00',
-                                nightShiftStart: location.night_shift_start || '21:00',
-                                nightShiftEnd: location.night_shift_end || '05:00'
-                              });
-                              setShowForm(true);
-                            }}
-                          >
-                            <Edit size={16} />
-                          </Button>
-                          {hasFullControl(role) && (
+                          {canEdit && (
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              onClick={() => {
+                                setEditingLocation(location);
+                                setFormData({
+                                  name: location.name || '',
+                                  code: location.code || '',
+                                  description: location.description || '',
+                                  centerLat: location.center_lat || '',
+                                  centerLng: location.center_lng || '',
+                                  radiusMeters: location.radius_meters || '',
+                                  morningShiftStart: location.morning_shift_start || '09:00',
+                                  morningShiftEnd: location.morning_shift_end || '17:00',
+                                  nightShiftStart: location.night_shift_start || '21:00',
+                                  nightShiftEnd: location.night_shift_end || '05:00'
+                                });
+                                setShowForm(true);
+                              }}
+                            >
+                              <Edit size={16} />
+                            </Button>
+                          )}
+                          {canDelete && (
                             <Button
                               variant="outline-danger"
                               size="sm"

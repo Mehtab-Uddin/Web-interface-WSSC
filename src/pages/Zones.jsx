@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { Card, Table, Button, Spinner, Modal, Form, Row, Col, InputGroup, Nav, Tab } from 'react-bootstrap';
@@ -8,7 +8,7 @@ import TablePagination from '../components/common/TablePagination';
 import ConfirmationModal from '../components/common/ConfirmationModal';
 import ZonesMap from '../components/tracking/ZonesMap';
 import { useAuth } from '../contexts/AuthContext';
-import { hasFullControl, hasExecutivePrivileges } from '../utils/roles';
+import { hasFullControl, hasExecutivePrivileges, normalizeRole, ROLE } from '../utils/roles';
 
 export default function Zones() {
   const { user } = useAuth();
@@ -31,8 +31,30 @@ export default function Zones() {
     radiusMeters: ''
   });
 
-  const role = user?.role?.toLowerCase() || '';
-  const canManage = hasFullControl(role) || role === 'general_manager';
+  const role = normalizeRole(user?.role);
+  const isGeneralManager = role === ROLE.GENERAL_MANAGER;
+  const isFullControlUser = hasFullControl(role);
+  const canManage = isFullControlUser || isGeneralManager;
+  const canEdit = isFullControlUser; // Only super_admin and CEO can edit
+  const canDelete = isFullControlUser;
+
+  // Get user departments for General Manager filtering
+  const userDepartments = useMemo(() => {
+    const deptFields = [
+      ...(Array.isArray(user?.departments) ? user.departments : []),
+      user?.department,
+      user?.empDeptt,
+      user?.emp_deptt,
+    ].filter(Boolean);
+    return Array.from(new Set(deptFields.map((d) => String(d).trim()))).filter(Boolean);
+  }, [user]);
+
+  const matchesDepartment = (deptValue, targets) => {
+    if (!targets || targets.length === 0) return true;
+    const normalizedTargets = targets.map((d) => String(d).trim().toLowerCase());
+    const value = String(deptValue || '').trim().toLowerCase();
+    return value && normalizedTargets.includes(value);
+  };
 
   useEffect(() => {
     fetchZones();
@@ -107,15 +129,21 @@ export default function Zones() {
     }
   };
 
-  const filteredZones = zones.filter((zone) => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      String(zone.name || '').toLowerCase().includes(searchLower) ||
-      String(zone.location_name || '').toLowerCase().includes(searchLower) ||
-      String(zone.description || '').toLowerCase().includes(searchLower) ||
-      String(zone.id || '').includes(searchLower)
-    );
-  });
+  const filteredZones = useMemo(() => {
+    return zones.filter((zone) => {
+      // Department filter for General Manager (if zone has department field)
+      // Note: Zones might not have department field directly, so this is optional
+      
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        String(zone.name || '').toLowerCase().includes(searchLower) ||
+        String(zone.location_name || '').toLowerCase().includes(searchLower) ||
+        String(zone.description || '').toLowerCase().includes(searchLower) ||
+        String(zone.id || '').includes(searchLower);
+      
+      return matchesSearch;
+    });
+  }, [zones, searchTerm, isGeneralManager, userDepartments]);
 
   // Pagination
   const totalPages = Math.ceil(filteredZones.length / itemsPerPage);
@@ -235,25 +263,27 @@ export default function Zones() {
                     {canManage && (
                       <td>
                         <div className="d-flex gap-2">
-                          <Button
-                            variant="outline-primary"
-                            size="sm"
-                            onClick={() => {
-                              setEditingZone(zone);
-                              setFormData({
-                                name: zone.name || '',
-                                locationId: zone.location_id || '',
-                                description: zone.description || '',
-                                centerLat: zone.center_lat || '',
-                                centerLng: zone.center_lng || '',
-                                radiusMeters: zone.radius_meters || ''
-                              });
-                              setShowForm(true);
-                            }}
-                          >
-                            <Edit size={16} />
-                          </Button>
-                          {hasFullControl(role) && (
+                          {canEdit && (
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              onClick={() => {
+                                setEditingZone(zone);
+                                setFormData({
+                                  name: zone.name || '',
+                                  locationId: zone.location_id || '',
+                                  description: zone.description || '',
+                                  centerLat: zone.center_lat || '',
+                                  centerLng: zone.center_lng || '',
+                                  radiusMeters: zone.radius_meters || ''
+                                });
+                                setShowForm(true);
+                              }}
+                            >
+                              <Edit size={16} />
+                            </Button>
+                          )}
+                          {canDelete && (
                             <Button
                               variant="outline-danger"
                               size="sm"
