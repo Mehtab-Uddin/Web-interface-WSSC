@@ -18,6 +18,7 @@ import Holidays from './pages/Holidays';
 import LiveTracking from './pages/LiveTracking';
 import Reports from './pages/Reports';
 import SystemSettings from './pages/SystemSettings';
+import DropdownOptions from './pages/DropdownOptions';
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
             <Route path="live-tracking" element={<LiveTracking />} />
             <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<SystemSettings />} />
+            <Route path="dropdown-options" element={<DropdownOptions />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

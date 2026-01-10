@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Card, Form, Table, Badge, Spinner, Row, Col, InputGroup } from 'react-bootstrap';
+import { Card, Form, Table, Badge, Spinner, Row, Col, InputGroup, Pagination } from 'react-bootstrap';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import { Clock, Search, X } from 'lucide-react';
@@ -10,6 +10,8 @@ export default function UsersByDepartment({ user: currentUser }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [departments, setDepartments] = useState([]);
   const [usersData, setUsersData] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
 
   // Fetch departments
   useEffect(() => {
@@ -23,6 +25,11 @@ export default function UsersByDepartment({ user: currentUser }) {
     };
     fetchDepartments();
   }, []);
+
+  // Reset to first page when department or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedDepartment, searchTerm]);
 
   // Fetch users by department
   useEffect(() => {
@@ -126,6 +133,17 @@ export default function UsersByDepartment({ user: currentUser }) {
       );
     });
   }, [departmentFilteredUsers, searchTerm]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const paginatedUsers = filteredUsers.slice(indexOfFirstItem, indexOfLastItem);
+
+  // Handle page change
+  const handlePageChange = (pageNumber) => {
+    setCurrentPage(pageNumber);
+  };
 
   const departmentStats = useMemo(() => {
     if (!usersData) return null;
@@ -238,9 +256,9 @@ export default function UsersByDepartment({ user: currentUser }) {
         </div>
       )}
 
-      <div className="table-responsive" style={{ maxHeight: '600px', overflowY: 'auto' }}>
+      <div className="table-responsive">
         <Table hover className="mb-0">
-          <thead className="table-light sticky-top">
+          <thead className="table-light">
             <tr>
               <th>Name</th>
               <th>Employee #</th>
@@ -260,7 +278,7 @@ export default function UsersByDepartment({ user: currentUser }) {
                 </td>
               </tr>
             ) : (
-              filteredUsers.map((user) => (
+              paginatedUsers.map((user) => (
                 <tr key={user.id}>
                   <td>
                     <div className="fw-semibold">{user.full_name}</div>
@@ -312,6 +330,57 @@ export default function UsersByDepartment({ user: currentUser }) {
           </tbody>
         </Table>
       </div>
+
+      {filteredUsers.length > 0 && totalPages > 1 && (
+        <div className="d-flex justify-content-between align-items-center p-3 border-top">
+          <div className="text-muted">
+            Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredUsers.length)} of {filteredUsers.length} users
+          </div>
+          <Pagination className="mb-0">
+            <Pagination.First 
+              onClick={() => handlePageChange(1)} 
+              disabled={currentPage === 1}
+            />
+            <Pagination.Prev 
+              onClick={() => handlePageChange(currentPage - 1)} 
+              disabled={currentPage === 1}
+            />
+            {[...Array(totalPages)].map((_, index) => {
+              const pageNumber = index + 1;
+              // Show first page, last page, current page, and pages around current
+              if (
+                pageNumber === 1 ||
+                pageNumber === totalPages ||
+                (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+              ) {
+                return (
+                  <Pagination.Item
+                    key={pageNumber}
+                    active={pageNumber === currentPage}
+                    onClick={() => handlePageChange(pageNumber)}
+                  >
+                    {pageNumber}
+                  </Pagination.Item>
+                );
+              } else if (
+                pageNumber === currentPage - 2 ||
+                pageNumber === currentPage + 2
+              ) {
+                return <Pagination.Ellipsis key={pageNumber} />;
+              }
+              return null;
+            })}
+            <Pagination.Next 
+              onClick={() => handlePageChange(currentPage + 1)} 
+              disabled={currentPage === totalPages}
+            />
+            <Pagination.Last 
+              onClick={() => handlePageChange(totalPages)} 
+              disabled={currentPage === totalPages}
+            />
+          </Pagination>
+        </div>
+      )}
     </Card>
   );
 }

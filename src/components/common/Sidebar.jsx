@@ -14,6 +14,7 @@ import {
   Activity,
   BarChart3,
   Layers,
+  List,
   X
 } from 'lucide-react';
 import { hasFullControl, hasExecutivePrivileges } from '../../utils/roles';
@@ -42,6 +43,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/holidays', icon: Calendar, label: 'Holidays', access: hasFullAccess },
     { path: '/live-tracking', icon: Activity, label: 'Live Tracking', access: hasExecAccess },
     { path: '/reports', icon: BarChart3, label: 'Reports', access: hasExecAccess },
+    { path: '/dropdown-options', icon: List, label: 'Dropdown Options', access: hasFullAccess },
     { path: '/settings', icon: Settings, label: 'Settings', access: hasFullAccess },
   ].filter(item => item.access);
 

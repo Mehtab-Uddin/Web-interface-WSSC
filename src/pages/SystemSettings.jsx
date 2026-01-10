@@ -77,10 +77,12 @@ export default function SystemSettings() {
       <h1 className="mb-4 fw-bold">System Settings</h1>
 
       <Card className="custom-card">
-        <div className="card-header-custom">
-          <h4>Attendance Settings</h4>
-        </div>
-        <Form onSubmit={handleSubmit}>
+        <Card.Body>
+          <div className="card-header-custom mb-3">
+            <h4>Attendance Settings</h4>
+            <p className="text-muted mb-0">Configure grace period and clock interval requirements</p>
+          </div>
+          <Form onSubmit={handleSubmit}>
           <Form.Group className="mb-3">
             <Form.Label className="form-label-custom">
               Grace Period (Minutes)
@@ -95,7 +97,7 @@ export default function SystemSettings() {
               required
             />
             <Form.Text className="text-muted">
-              The grace period in minutes allowed for late clock-in (0-1440 minutes)
+              Time after Shift Start time until which clock-in won't be marked as late (0-1440 minutes / 24 hours)
             </Form.Text>
           </Form.Group>
 
@@ -114,14 +116,15 @@ export default function SystemSettings() {
               required
             />
             <Form.Text className="text-muted">
-              Minimum hours required between clock-in and clock-out (0-24 hours)
+              Minimum time required between clock-in and clock-out (0-24 hours)
             </Form.Text>
           </Form.Group>
 
           <Button variant="primary" type="submit" disabled={saving} className="btn-custom">
-            {saving ? 'Saving...' : 'Save Configuration'}
+            {saving ? 'Saving...' : 'Save Settings'}
           </Button>
         </Form>
+        </Card.Body>
       </Card>
     </div>
   );
