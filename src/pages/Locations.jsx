@@ -324,7 +324,7 @@ export default function Locations() {
         <Modal show={true} onHide={() => {
           setShowForm(false);
           setEditingLocation(null);
-        }} size="lg">
+        }} size="lg" backdrop="static">
           <Modal.Header closeButton>
             <Modal.Title>{editingLocation ? 'Edit Location' : 'Create Location'}</Modal.Title>
           </Modal.Header>

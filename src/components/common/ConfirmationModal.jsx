@@ -13,6 +13,7 @@ export default function ConfirmationModal({
     <Modal 
       show={show} 
       onHide={onHide}
+      backdrop="static"
       centered
       className="confirmation-modal"
     >

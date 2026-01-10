@@ -1,5 +1,4 @@
-import { Button, ButtonGroup } from 'react-bootstrap';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Pagination } from 'react-bootstrap';
 
 export default function TablePagination({
   currentPage,
@@ -7,46 +6,27 @@ export default function TablePagination({
   onPageChange,
   itemsPerPage = 10,
   totalItems,
-  onItemsPerPageChange
+  onItemsPerPageChange,
+  itemName = 'entries' // Optional: allows customization of item name (e.g., 'users', 'entries', 'items')
 }) {
-  const getPageNumbers = () => {
-    const pages = [];
-    const maxVisible = 5;
-    
-    if (totalPages <= maxVisible) {
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i);
-      }
-    } else {
-      if (currentPage <= 3) {
-        for (let i = 1; i <= 5; i++) {
-          pages.push(i);
-        }
-      } else if (currentPage >= totalPages - 2) {
-        for (let i = totalPages - 4; i <= totalPages; i++) {
-          pages.push(i);
-        }
-      } else {
-        for (let i = currentPage - 2; i <= currentPage + 2; i++) {
-          pages.push(i);
-        }
-      }
-    }
-    
-    return pages;
+  // Handle page change
+  const handlePageChange = (pageNumber) => {
+    onPageChange(pageNumber);
   };
 
-  if (totalPages <= 1) return null;
+  if (totalPages <= 1 && !onItemsPerPageChange) return null;
 
-  const startItem = (currentPage - 1) * itemsPerPage + 1;
-  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const startItem = indexOfFirstItem + 1;
+  const endItem = Math.min(indexOfLastItem, totalItems);
 
   return (
-    <div className="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
-      <div className="d-flex align-items-center gap-2">
-        <span className="text-muted">
-          Showing {startItem} to {endItem} of {totalItems} entries
-        </span>
+    <div className="d-flex justify-content-between align-items-center p-3 border-top flex-wrap gap-2">
+      <div className="d-flex align-items-center gap-2 flex-wrap">
+        <div className="text-muted">
+          Showing {startItem} to {endItem} of {totalItems} {itemName}
+        </div>
         {onItemsPerPageChange && (
           <select
             className="form-select form-select-sm"
@@ -62,36 +42,51 @@ export default function TablePagination({
         )}
       </div>
       
-      <ButtonGroup>
-        <Button
-          variant="outline-primary"
-          size="sm"
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage === 1}
-        >
-          <ChevronLeft size={16} />
-        </Button>
-        
-        {getPageNumbers().map((page) => (
-          <Button
-            key={page}
-            variant={currentPage === page ? 'primary' : 'outline-primary'}
-            size="sm"
-            onClick={() => onPageChange(page)}
-          >
-            {page}
-          </Button>
-        ))}
-        
-        <Button
-          variant="outline-primary"
-          size="sm"
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}
-        >
-          <ChevronRight size={16} />
-        </Button>
-      </ButtonGroup>
+      {totalPages > 1 && (
+        <Pagination className="mb-0">
+          <Pagination.First 
+            onClick={() => handlePageChange(1)} 
+            disabled={currentPage === 1}
+          />
+          <Pagination.Prev 
+            onClick={() => handlePageChange(currentPage - 1)} 
+            disabled={currentPage === 1}
+          />
+          {[...Array(totalPages)].map((_, index) => {
+            const pageNumber = index + 1;
+            // Show first page, last page, current page, and pages around current
+            if (
+              pageNumber === 1 ||
+              pageNumber === totalPages ||
+              (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+            ) {
+              return (
+                <Pagination.Item
+                  key={pageNumber}
+                  active={pageNumber === currentPage}
+                  onClick={() => handlePageChange(pageNumber)}
+                >
+                  {pageNumber}
+                </Pagination.Item>
+              );
+            } else if (
+              pageNumber === currentPage - 2 ||
+              pageNumber === currentPage + 2
+            ) {
+              return <Pagination.Ellipsis key={pageNumber} />;
+            }
+            return null;
+          })}
+          <Pagination.Next 
+            onClick={() => handlePageChange(currentPage + 1)} 
+            disabled={currentPage === totalPages}
+          />
+          <Pagination.Last 
+            onClick={() => handlePageChange(totalPages)} 
+            disabled={currentPage === totalPages}
+          />
+        </Pagination>
+      )}
     </div>
   );
 }

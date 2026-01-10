@@ -237,7 +237,7 @@ export default function Departments() {
         <Modal show={true} onHide={() => {
           setShowForm(false);
           setEditingDept(null);
-        }}>
+        }} backdrop="static">
           <Modal.Header closeButton>
             <Modal.Title>{editingDept ? 'Edit Department' : 'Create Department'}</Modal.Title>
           </Modal.Header>

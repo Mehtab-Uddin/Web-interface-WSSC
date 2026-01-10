@@ -819,6 +819,7 @@ export default function Assignments() {
         }}
         size="lg"
         centered
+        backdrop="static"
       >
         <Modal.Header closeButton>
           <Modal.Title>Assign Staff</Modal.Title>
@@ -959,6 +960,7 @@ export default function Assignments() {
         }}
         size="lg"
         centered
+        backdrop="static"
       >
         <Modal.Header closeButton>
           <Modal.Title>Assign Supervisor to Location</Modal.Title>
@@ -1048,6 +1050,7 @@ export default function Assignments() {
         size="lg"
         centered
         scrollable
+        backdrop="static"
       >
         <Modal.Header closeButton>
           <Modal.Title>General Manager Department Assignments</Modal.Title>
@@ -1122,6 +1125,7 @@ export default function Assignments() {
         size="lg"
         centered
         scrollable
+        backdrop="static"
       >
         <Modal.Header closeButton>
           <Modal.Title>Supervisor Hierarchy Management</Modal.Title>

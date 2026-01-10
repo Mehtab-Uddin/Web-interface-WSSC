@@ -117,7 +117,7 @@ export default function UserForm({ user, onClose, onSuccess }) {
   };
 
   return (
-    <Modal show={true} onHide={onClose} size="lg">
+    <Modal show={true} onHide={onClose} size="lg" backdrop="static">
       <Modal.Header closeButton>
         <Modal.Title>{user ? 'Edit User' : 'Create New User'}</Modal.Title>
       </Modal.Header>

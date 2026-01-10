@@ -5,6 +5,7 @@ import { Card, Form, Button, Spinner, Alert, Table, Badge, Modal, Tab, Tabs } fr
 import { useAuth } from '../contexts/AuthContext';
 import { hasFullControl } from '../utils/roles';
 import ConfirmationModal from '../components/common/ConfirmationModal';
+import TablePagination from '../components/common/TablePagination';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
 
 const TAB_TYPES = {
@@ -35,6 +36,8 @@ export default function DropdownOptions() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [deletingItem, setDeletingItem] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [formData, setFormData] = useState({
     jobId: '',
     gradeId: '',
@@ -54,6 +57,7 @@ export default function DropdownOptions() {
   useEffect(() => {
     if (canManage) {
       loadItems();
+      setCurrentPage(1); // Reset to first page when tab changes
     }
   }, [activeTab, canManage]);
 
@@ -247,6 +251,12 @@ export default function DropdownOptions() {
     );
   }
 
+  // Pagination calculations
+  const totalPages = Math.ceil(items.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedItems = items.slice(startIndex, endIndex);
+
   const renderTable = () => {
     if (loading) {
       return (
@@ -267,77 +277,95 @@ export default function DropdownOptions() {
     }
 
     return (
-      <Table striped bordered hover responsive className="mt-3">
-        <thead>
-          <tr>
-            {activeTab === TAB_TYPES.JOBS && <th>Job ID</th>}
-            {activeTab === TAB_TYPES.GRADES && <th>Grade ID</th>}
-            {(activeTab === TAB_TYPES.MARITAL_STATUSES || activeTab === TAB_TYPES.GENDERS || 
-              activeTab === TAB_TYPES.SHIFT_DAYS || activeTab === TAB_TYPES.SHIFT_TIMES) && <th>Value</th>}
-            <th>Label</th>
-            {(activeTab === TAB_TYPES.JOBS || activeTab === TAB_TYPES.GRADES || 
-              activeTab === TAB_TYPES.SHIFT_DAYS || activeTab === TAB_TYPES.SHIFT_TIMES) && <th>Description</th>}
-            {activeTab === TAB_TYPES.SHIFT_DAYS && <th>Days</th>}
-            {activeTab === TAB_TYPES.SHIFT_TIMES && (
-              <>
-                <th>Start Time</th>
-                <th>End Time</th>
-              </>
-            )}
-            <th>Display Order</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => (
-            <tr key={item.id}>
-              {activeTab === TAB_TYPES.JOBS && <td>{item.jobId}</td>}
-              {activeTab === TAB_TYPES.GRADES && <td>{item.gradeId}</td>}
-              {(activeTab === TAB_TYPES.MARITAL_STATUSES || activeTab === TAB_TYPES.GENDERS || 
-                activeTab === TAB_TYPES.SHIFT_DAYS || activeTab === TAB_TYPES.SHIFT_TIMES) && <td>{item.value}</td>}
-              <td>{item.label}</td>
-              {(activeTab === TAB_TYPES.JOBS || activeTab === TAB_TYPES.GRADES || 
-                activeTab === TAB_TYPES.SHIFT_DAYS || activeTab === TAB_TYPES.SHIFT_TIMES) && (
-                <td>{item.description || '-'}</td>
-              )}
-              {activeTab === TAB_TYPES.SHIFT_DAYS && <td>{item.days}</td>}
-              {activeTab === TAB_TYPES.SHIFT_TIMES && (
-                <>
-                  <td>{item.startTime}</td>
-                  <td>{item.endTime}</td>
-                </>
-              )}
-              <td>{item.displayOrder || 0}</td>
-              <td>
-                <Badge bg={item.isActive ? 'success' : 'secondary'}>
-                  {item.isActive ? 'Active' : 'Inactive'}
-                </Badge>
-              </td>
-              <td>
-                <Button
-                  variant="link"
-                  size="sm"
-                  onClick={() => handleEdit(item)}
-                  className="p-1 me-2"
-                  title="Edit"
-                >
-                  <Edit2 size={16} />
-                </Button>
-                <Button
-                  variant="link"
-                  size="sm"
-                  onClick={() => handleDeleteClick(item)}
-                  className="p-1 text-danger"
-                  title={item.isActive ? 'Deactivate' : 'Activate'}
-                >
-                  <Trash2 size={16} />
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
+      <>
+        <div className="table-responsive">
+          <Table striped bordered hover responsive className="mt-3 mb-0">
+            <thead>
+              <tr>
+                {activeTab === TAB_TYPES.JOBS && <th>Job ID</th>}
+                {activeTab === TAB_TYPES.GRADES && <th>Grade ID</th>}
+                {(activeTab === TAB_TYPES.MARITAL_STATUSES || activeTab === TAB_TYPES.GENDERS || 
+                  activeTab === TAB_TYPES.SHIFT_DAYS || activeTab === TAB_TYPES.SHIFT_TIMES) && <th>Value</th>}
+                <th>Label</th>
+                {(activeTab === TAB_TYPES.JOBS || activeTab === TAB_TYPES.GRADES || 
+                  activeTab === TAB_TYPES.SHIFT_DAYS || activeTab === TAB_TYPES.SHIFT_TIMES) && <th>Description</th>}
+                {activeTab === TAB_TYPES.SHIFT_DAYS && <th>Days</th>}
+                {activeTab === TAB_TYPES.SHIFT_TIMES && (
+                  <>
+                    <th>Start Time</th>
+                    <th>End Time</th>
+                  </>
+                )}
+                <th>Display Order</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedItems.map((item) => (
+                <tr key={item.id}>
+                  {activeTab === TAB_TYPES.JOBS && <td>{item.jobId}</td>}
+                  {activeTab === TAB_TYPES.GRADES && <td>{item.gradeId}</td>}
+                  {(activeTab === TAB_TYPES.MARITAL_STATUSES || activeTab === TAB_TYPES.GENDERS || 
+                    activeTab === TAB_TYPES.SHIFT_DAYS || activeTab === TAB_TYPES.SHIFT_TIMES) && <td>{item.value}</td>}
+                  <td>{item.label}</td>
+                  {(activeTab === TAB_TYPES.JOBS || activeTab === TAB_TYPES.GRADES || 
+                    activeTab === TAB_TYPES.SHIFT_DAYS || activeTab === TAB_TYPES.SHIFT_TIMES) && (
+                    <td>{item.description || '-'}</td>
+                  )}
+                  {activeTab === TAB_TYPES.SHIFT_DAYS && <td>{item.days}</td>}
+                  {activeTab === TAB_TYPES.SHIFT_TIMES && (
+                    <>
+                      <td>{item.startTime}</td>
+                      <td>{item.endTime}</td>
+                    </>
+                  )}
+                  <td>{item.displayOrder || 0}</td>
+                  <td>
+                    <Badge bg={item.isActive ? 'success' : 'secondary'}>
+                      {item.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </td>
+                  <td>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      onClick={() => handleEdit(item)}
+                      className="p-1 me-2"
+                      title="Edit"
+                    >
+                      <Edit2 size={16} />
+                    </Button>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      onClick={() => handleDeleteClick(item)}
+                      className="p-1 text-danger"
+                      title={item.isActive ? 'Deactivate' : 'Activate'}
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+        {items.length > 0 && (
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            itemsPerPage={itemsPerPage}
+            totalItems={items.length}
+            onItemsPerPageChange={(newItemsPerPage) => {
+              setItemsPerPage(newItemsPerPage);
+              setCurrentPage(1);
+            }}
+            itemName={`${TAB_LABELS[activeTab].toLowerCase()}`}
+          />
+        )}
+      </>
     );
   };
 
@@ -368,7 +396,7 @@ export default function DropdownOptions() {
       </Card>
 
       {/* Add/Edit Modal */}
-      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered>
+      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered backdrop="static">
         <Modal.Header closeButton>
           <Modal.Title>
             {editingItem ? 'Edit' : 'Add'} {TAB_LABELS[activeTab].slice(0, -1)}

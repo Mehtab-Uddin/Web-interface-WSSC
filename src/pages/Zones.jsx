@@ -323,7 +323,7 @@ export default function Zones() {
         <Modal show={true} onHide={() => {
           setShowForm(false);
           setEditingZone(null);
-        }} size="lg">
+        }} size="lg" backdrop="static">
           <Modal.Header closeButton>
             <Modal.Title>{editingZone ? 'Edit Beat' : 'Create Beat'}</Modal.Title>
           </Modal.Header>

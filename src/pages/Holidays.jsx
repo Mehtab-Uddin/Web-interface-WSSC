@@ -234,7 +234,7 @@ export default function Holidays() {
         <Modal show={true} onHide={() => {
           setShowForm(false);
           setEditingHoliday(null);
-        }}>
+        }} backdrop="static">
           <Modal.Header closeButton>
             <Modal.Title>{editingHoliday ? 'Edit Holiday' : 'Create Holiday'}</Modal.Title>
           </Modal.Header>
