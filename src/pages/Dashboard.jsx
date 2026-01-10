@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import DashboardStats from '../components/dashboard/DashboardStats';
+import UsersByDepartment from '../components/dashboard/UsersByDepartment';
 import { useAuth } from '../contexts/AuthContext';
-import { Spinner } from 'react-bootstrap';
+import { Spinner, Row, Col } from 'react-bootstrap';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -47,6 +48,11 @@ export default function Dashboard() {
     <div className="fade-in">
       <h1 className="mb-4 fw-bold">Dashboard</h1>
       <DashboardStats stats={stats} user={user} />
+      <Row className="mt-4">
+        <Col xs={12}>
+          <UsersByDepartment user={user} />
+        </Col>
+      </Row>
     </div>
   );
 }
