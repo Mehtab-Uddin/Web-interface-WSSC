@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { Card, Table, Button, Spinner, Modal, Form, Row, Col, InputGroup, Nav, Tab } from 'react-bootstrap';
@@ -20,6 +20,7 @@ export default function Zones() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [activeTab, setActiveTab] = useState('map'); // Default to map view (original behavior)
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [formData, setFormData] = useState({
@@ -86,23 +87,35 @@ export default function Zones() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        ...formData,
-        centerLat: formData.centerLat ? parseFloat(formData.centerLat) : null,
-        centerLng: formData.centerLng ? parseFloat(formData.centerLng) : null,
-        radiusMeters: formData.radiusMeters ? parseInt(formData.radiusMeters) : null
-      };
-
       if (editingZone) {
-        await api.put(`/zones/${editingZone.id}`, payload);
+        // Update payload - location_id is not updatable per backend
+        const updatePayload = {
+          name: formData.name,
+          description: formData.description || '',
+          center_lat: formData.centerLat ? parseFloat(formData.centerLat) : null,
+          center_lng: formData.centerLng ? parseFloat(formData.centerLng) : null,
+          radius_meters: formData.radiusMeters ? parseInt(formData.radiusMeters) : null
+        };
+        await api.put(`/zones/${editingZone.id}`, updatePayload);
         toast.success('Beat updated successfully');
       } else {
-        await api.post('/zones', payload);
+        // Create payload - includes location_id
+        const createPayload = {
+          name: formData.name,
+          location_id: formData.locationId,
+          description: formData.description || '',
+          center_lat: formData.centerLat ? parseFloat(formData.centerLat) : null,
+          center_lng: formData.centerLng ? parseFloat(formData.centerLng) : null,
+          radius_meters: formData.radiusMeters ? parseInt(formData.radiusMeters) : null
+        };
+        await api.post('/zones', createPayload);
         toast.success('Beat created successfully');
       }
       setShowForm(false);
       setEditingZone(null);
-      fetchZones();
+      
+      // Fetch zones - pagination will be maintained automatically via useEffect
+      await fetchZones();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to save beat');
     }
@@ -121,7 +134,9 @@ export default function Zones() {
       toast.success('Beat deleted successfully');
       setShowConfirmModal(false);
       setDeleteId(null);
-      fetchZones();
+      
+      // Fetch zones - pagination will be maintained automatically via useEffect
+      await fetchZones();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to delete beat');
       setShowConfirmModal(false);
@@ -151,9 +166,38 @@ export default function Zones() {
   const endIndex = startIndex + itemsPerPage;
   const paginatedZones = filteredZones.slice(startIndex, endIndex);
 
+  // Reset to page 1 when search changes
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm]);
+
+  // Track previous values to only adjust pagination when data changes, not when page changes
+  const prevFilteredLengthRef = useRef(filteredZones.length);
+  const prevItemsPerPageRef = useRef(itemsPerPage);
+
+  // Validate and maintain pagination when filtered zones or items per page changes
+  // This ensures we stay on the same page after updates/deletes (unless page becomes invalid)
+  useEffect(() => {
+    const filteredLengthChanged = prevFilteredLengthRef.current !== filteredZones.length;
+    const itemsPerPageChanged = prevItemsPerPageRef.current !== itemsPerPage;
+    
+    // Only adjust pagination if the data changed, not if user manually changed page
+    if (filteredLengthChanged || itemsPerPageChanged) {
+      const newTotalPages = Math.ceil(filteredZones.length / itemsPerPage);
+      if (newTotalPages > 0 && currentPage > newTotalPages) {
+        // If current page is beyond available pages, go to last page
+        setCurrentPage(newTotalPages);
+      } else if (newTotalPages === 0 && currentPage !== 1) {
+        // If no results, go to page 1 (only if not already on page 1)
+        setCurrentPage(1);
+      }
+      // Otherwise, maintain current page
+      
+      // Update refs
+      prevFilteredLengthRef.current = filteredZones.length;
+      prevItemsPerPageRef.current = itemsPerPage;
+    }
+  }, [filteredZones.length, itemsPerPage, currentPage]);
 
   if (loading) {
     return (
@@ -192,7 +236,7 @@ export default function Zones() {
         )}
       </div>
 
-      <Tab.Container defaultActiveKey="map">
+      <Tab.Container activeKey={activeTab} onSelect={(k) => setActiveTab(k || 'list')}>
         <Nav variant="tabs" className="mb-3">
           <Nav.Item>
             <Nav.Link eventKey="map">Map View</Nav.Link>

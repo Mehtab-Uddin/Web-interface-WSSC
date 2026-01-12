@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { Card, Table, Badge, Button, Spinner, Modal, Form, Row, Col, InputGroup, Nav, Tab } from 'react-bootstrap';
@@ -18,6 +18,7 @@ export default function Locations() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [activeTab, setActiveTab] = useState('map'); // Default to map view (original behavior)
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [formData, setFormData] = useState({
@@ -94,7 +95,9 @@ export default function Locations() {
       }
       setShowForm(false);
       setEditingLocation(null);
-      fetchLocations();
+      
+      // Fetch locations - pagination will be maintained automatically via useEffect
+      await fetchLocations();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to save location');
     }
@@ -113,7 +116,9 @@ export default function Locations() {
       toast.success('Location deleted successfully');
       setShowConfirmModal(false);
       setDeleteId(null);
-      fetchLocations();
+      
+      // Fetch locations - pagination will be maintained automatically via useEffect
+      await fetchLocations();
     } catch (error) {
       toast.error(error.response?.data?.error || 'Failed to delete location');
       setShowConfirmModal(false);
@@ -144,9 +149,38 @@ export default function Locations() {
   const endIndex = startIndex + itemsPerPage;
   const paginatedLocations = filteredLocations.slice(startIndex, endIndex);
 
+  // Reset to page 1 when search changes
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm]);
+
+  // Track previous values to only adjust pagination when data changes, not when page changes
+  const prevFilteredLengthRef = useRef(filteredLocations.length);
+  const prevItemsPerPageRef = useRef(itemsPerPage);
+
+  // Validate and maintain pagination when filtered locations or items per page changes
+  // This ensures we stay on the same page after updates/deletes (unless page becomes invalid)
+  useEffect(() => {
+    const filteredLengthChanged = prevFilteredLengthRef.current !== filteredLocations.length;
+    const itemsPerPageChanged = prevItemsPerPageRef.current !== itemsPerPage;
+    
+    // Only adjust pagination if the data changed, not if user manually changed page
+    if (filteredLengthChanged || itemsPerPageChanged) {
+      const newTotalPages = Math.ceil(filteredLocations.length / itemsPerPage);
+      if (newTotalPages > 0 && currentPage > newTotalPages) {
+        // If current page is beyond available pages, go to last page
+        setCurrentPage(newTotalPages);
+      } else if (newTotalPages === 0 && currentPage !== 1) {
+        // If no results, go to page 1 (only if not already on page 1)
+        setCurrentPage(1);
+      }
+      // Otherwise, maintain current page
+      
+      // Update refs
+      prevFilteredLengthRef.current = filteredLocations.length;
+      prevItemsPerPageRef.current = itemsPerPage;
+    }
+  }, [filteredLocations.length, itemsPerPage, currentPage]);
 
   if (loading) {
     return (
@@ -189,7 +223,7 @@ export default function Locations() {
         )}
       </div>
 
-      <Tab.Container defaultActiveKey="map">
+      <Tab.Container activeKey={activeTab} onSelect={(k) => setActiveTab(k || 'list')}>
         <Nav variant="tabs" className="mb-3">
           <Nav.Item>
             <Nav.Link eventKey="map">Map View</Nav.Link>
